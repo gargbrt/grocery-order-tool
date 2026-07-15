@@ -4,13 +4,15 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { OrderCard } from "@/components/OrderCard";
 import { MiniCalendar } from "@/components/MiniCalendar";
-import { PhoneInput, toE164 } from "@/components/PhoneInput";
+import { toE164 } from "@/components/PhoneInput";
+import { HomePicker, type ContactSuggestion } from "@/components/HomePicker";
 
 type Order = {
   id: string;
   channel: string;
   status: string;
   createdAt: string;
+  prepaid: boolean;
   contact: { homeLabel: string } | null;
   items: { id: string }[];
 };
@@ -37,6 +39,7 @@ export default function OrdersPage() {
   );
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   async function load(silent = false) {
@@ -66,14 +69,22 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="tap-target rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white"
-        >
-          + WhatsApp order
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowRecordPayment(true)}
+            className="tap-target rounded-full border border-brand-600 px-3 py-2 text-sm font-medium text-brand-700"
+          >
+            Record payment
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="tap-target rounded-full bg-brand-600 px-3 py-2 text-sm font-medium text-white"
+          >
+            + WhatsApp order
+          </button>
+        </div>
       </div>
 
       <MiniCalendar selectedDate={selectedDate} onSelect={setSelectedDate} />
@@ -132,11 +143,13 @@ export default function OrdersPage() {
             status={o.status}
             itemCount={o.items.length}
             createdAt={o.createdAt}
+            prepaid={o.prepaid}
           />
         ))}
       </div>
 
       {showAdd && <AddWhatsappOrderModal onClose={() => setShowAdd(false)} onCreated={load} />}
+      {showRecordPayment && <RecordPaymentModal onClose={() => setShowRecordPayment(false)} />}
     </div>
   );
 }
@@ -145,6 +158,7 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
   const [homeLabel, setHomeLabel] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [rawMessage, setRawMessage] = useState("");
+  const [prepaid, setPrepaid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,7 +168,7 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
     const res = await fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ homeLabel, contactPhone: toE164(contactPhone), rawMessage }),
+      body: JSON.stringify({ homeLabel, contactPhone: toE164(contactPhone), rawMessage, prepaid }),
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -170,13 +184,12 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
       <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-xl2">
         <h3 className="mb-3 text-base font-semibold text-gray-900">Paste WhatsApp order</h3>
         <div className="space-y-3">
-          <input
-            placeholder="Home label (e.g. Sharma - Flat 4B)"
-            value={homeLabel}
-            onChange={(e) => setHomeLabel(e.target.value)}
-            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          <HomePicker
+            homeLabel={homeLabel}
+            phone={contactPhone}
+            onHomeLabelChange={setHomeLabel}
+            onPhoneChange={setContactPhone}
           />
-          <PhoneInput value={contactPhone} onChange={setContactPhone} />
           <textarea
             placeholder={"Paste the order message, one item per line\ne.g.\n2 kg rice\n1 packet atta"}
             value={rawMessage}
@@ -184,6 +197,10 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
             rows={5}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} />
+            Already paid for
+          </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="mt-4 flex gap-2">
@@ -199,6 +216,106 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
             className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? "Saving…" : "Create order"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecordPaymentModal({ onClose }: { onClose: () => void }) {
+  const [homeLabel, setHomeLabel] = useState("");
+  const [phone, setPhone] = useState("");
+  const [contact, setContact] = useState<ContactSuggestion | null>(null);
+  const [type, setType] = useState<"PAYMENT" | "CHARGE">("PAYMENT");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!contact) return;
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch("/api/ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId: contact.id, amount: Number(amount), type, note: note || undefined }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError("Couldn't save - check the amount and try again.");
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-end bg-black/40 sm:items-center sm:justify-center">
+      <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-xl2">
+        <h3 className="mb-3 text-base font-semibold text-gray-900">Record payment / amount due</h3>
+        <div className="space-y-3">
+          <HomePicker
+            homeLabel={homeLabel}
+            phone={phone}
+            onHomeLabelChange={setHomeLabel}
+            onPhoneChange={setPhone}
+            onContactMatch={setContact}
+            homeLabelPlaceholder="Search Homes by name"
+          />
+          {!contact && (homeLabel || phone) && (
+            <p className="text-xs text-amber-600">
+              No matching Home selected yet - pick one from the suggestions.
+            </p>
+          )}
+          <div className="flex gap-2 rounded-full bg-gray-100 p-1">
+            <button
+              onClick={() => setType("PAYMENT")}
+              className={`tap-target flex-1 rounded-full text-sm font-medium ${
+                type === "PAYMENT" ? "bg-white text-brand-700 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              Payment received
+            </button>
+            <button
+              onClick={() => setType("CHARGE")}
+              className={`tap-target flex-1 rounded-full text-sm font-medium ${
+                type === "CHARGE" ? "bg-white text-amber-700 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              Amount due
+            </button>
+          </div>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Amount ₹"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+          <input
+            placeholder="Note (optional, e.g. 'Cash paid at shop')"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || !contact || !amount || Number(amount) <= 0}
+            className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : "Save"}
           </button>
         </div>
       </div>

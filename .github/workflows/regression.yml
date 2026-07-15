@@ -19,18 +19,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The root tsconfig also sweeps up mcp-server/, a separate sub-project
-      # with its own package.json that isn't installed here - so we only
-      # fail the build on errors reported under src/.
-      - name: Typecheck (src/ only)
-        run: |
-          npx tsc --noEmit 2>&1 | tee /tmp/tsc-output.txt || true
-          if grep -q '^src/' /tmp/tsc-output.txt; then
-            echo "TypeScript errors found under src/:"
-            grep '^src/' /tmp/tsc-output.txt
-            exit 1
-          fi
-          echo "No TypeScript errors under src/."
+      # mcp-server/ is a separate sub-project (own package.json/tsconfig,
+      # not installed here) - excluded from the root tsconfig.json so it
+      # doesn't pollute this app's typecheck.
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
 
       - name: Run regression suite
         run: npm run test

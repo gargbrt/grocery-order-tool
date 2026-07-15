@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegram";
-import { splitOrderIntoLines, assessOrderLikelihood } from "@/lib/orderParsing";
+import { splitOrderIntoLines, assessOrderLikelihood, parseOrderLine } from "@/lib/orderParsing";
 
 // Telegram calls this URL every time a customer messages the store's bot.
 // URL shape: /api/telegram/webhook/[storeId]?secret=xxxx  (see route segment below)
@@ -71,11 +71,7 @@ export async function POST(req: NextRequest) {
       flagReason: isLikelyOrder ? null : reason,
       items: {
         create: isLikelyOrder
-          ? lines.map((line, idx) => ({
-              itemName: line,
-              quantityRequested: "", // left blank - owner/helper fill in real qty during fulfillment
-              sortOrder: idx,
-            }))
+          ? lines.map((line, idx) => ({ ...parseOrderLine(line), sortOrder: idx }))
           : [],
       },
     },

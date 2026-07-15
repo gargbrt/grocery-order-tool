@@ -1,30 +1,30 @@
 export {}; // force module scope so this script's variables don't collide with other top-level scripts
 
-// Verbatim copy of the FIXED lineTotal formula from src/app/api/orders/[id]/route.ts.
+// Verbatim copy of the lineTotal formula from src/app/api/orders/[id]/route.ts.
+//
+// Changed from "unitPrice * parsedQuantity" to just "amount entered" - the
+// owner types the total for the whole line directly (e.g. ₹120 for "2 kg" of
+// something) instead of a per-unit rate they'd have to mentally multiply.
+// quantityFulfilled is still recorded but no longer feeds into this formula.
 
-function lineTotal(unitPrice: number, quantityFulfilled: string | undefined, availability?: string) {
-  const parsedQty = quantityFulfilled ? parseFloat(quantityFulfilled) : NaN;
-  const qty = Number.isNaN(parsedQty) ? 1 : parsedQty;
-  return availability === "UNAVAILABLE" ? 0 : unitPrice * qty;
+function lineTotal(amount: number, availability?: string) {
+  return availability === "UNAVAILABLE" ? 0 : amount;
 }
 
-const cases: { label: string; unitPrice: number; qty: string | undefined; availability?: string; expected: number }[] = [
-  { label: "clean integer qty", unitPrice: 50, qty: "2", expected: 100 },
-  { label: "decimal qty (kg)", unitPrice: 60, qty: "1.5", expected: 90 },
-  { label: "empty qty -> defaults to 1", unitPrice: 40, qty: "", expected: 40 },
-  { label: "undefined qty -> defaults to 1", unitPrice: 40, qty: undefined, expected: 40 },
-  { label: "qty with unit text 'kg' - parseFloat reads leading number", unitPrice: 60, qty: "2 kg", expected: 120 },
-  { label: "qty is non-numeric text - falls back to 1 (not 0 or NaN)", unitPrice: 40, qty: "a few", expected: 40 },
-  { label: "qty is explicit zero - correctly bills 0, not 1", unitPrice: 40, qty: "0", expected: 0 },
-  { label: "qty has leading space", unitPrice: 40, qty: "  3", expected: 120 },
-  { label: "unavailable item always bills 0 regardless of qty/price entered", unitPrice: 40, qty: "2", availability: "UNAVAILABLE", expected: 0 },
+const cases: { label: string; amount: number; availability?: string; expected: number }[] = [
+  { label: "amount entered directly, no multiplication", amount: 120, expected: 120 },
+  { label: "zero amount entered - bills 0, not treated as unset", amount: 0, expected: 0 },
+  { label: "decimal amount", amount: 89.5, expected: 89.5 },
+  { label: "unavailable item always bills 0 regardless of amount entered", amount: 120, availability: "UNAVAILABLE", expected: 0 },
+  { label: "available item bills the entered amount", amount: 60, availability: "AVAILABLE", expected: 60 },
+  { label: "substituted item bills the entered amount", amount: 45, availability: "SUBSTITUTED", expected: 45 },
 ];
 
 let pass = 0, fail = 0;
 for (const c of cases) {
-  const result = lineTotal(c.unitPrice, c.qty, c.availability);
+  const result = lineTotal(c.amount, c.availability);
   const ok = result === c.expected;
-  console.log(`${ok ? "PASS" : "FAIL"} [${c.label}] unitPrice=${c.unitPrice} qty=${JSON.stringify(c.qty)} -> ${result} (expected ${c.expected})`);
+  console.log(`${ok ? "PASS" : "FAIL"} [${c.label}] amount=${c.amount} availability=${c.availability ?? "PENDING"} -> ${result} (expected ${c.expected})`);
   ok ? pass++ : fail++;
 }
 console.log(`\n${pass} passed, ${fail} failed out of ${cases.length}`);

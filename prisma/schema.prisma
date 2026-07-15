@@ -137,6 +137,7 @@ model Order {
   status         OrderStatus @default(RECEIVED)
   isLikelyOrder  Boolean     @default(true) // false => surfaced in "Needs review" tab, never silently dropped
   flagReason     String? // why it was flagged, shown to the owner for context
+  prepaid        Boolean     @default(false) // customer said this was already paid for when the order was taken - defaults the eventual bill-finalize action to "paid" instead of "credit"
   assignedToId   String?
   assignedTo     User?       @relation("AssignedHelper", fields: [assignedToId], references: [id])
   createdAt      DateTime    @default(now())

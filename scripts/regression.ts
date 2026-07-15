@@ -21,6 +21,7 @@ const TEST_SCRIPTS = [
   "test-error-extraction.ts",
   "test-order-categories.ts",
   "test-ledger-overdue.ts",
+  "test-item-parsing.ts",
 ];
 
 let failedScripts: string[] = [];

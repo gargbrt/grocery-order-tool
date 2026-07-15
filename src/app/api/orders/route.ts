@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { splitOrderIntoLines, assessOrderLikelihood } from "@/lib/orderParsing";
+import { splitOrderIntoLines, assessOrderLikelihood, parseOrderLine } from "@/lib/orderParsing";
 import { getCategoryFilter, type OrderCategory as Category } from "@/lib/orderCategories";
 
 // GET /api/orders?category=all|open|review|delivered|cancelled|received&contactId=xxx&date=YYYY-MM-DD
@@ -55,6 +55,7 @@ const CreateOrderSchema = z.object({
   contactPhone: z.string().min(6),
   homeLabel: z.string().min(1),
   rawMessage: z.string().min(1),
+  prepaid: z.boolean().optional().default(false),
 });
 
 // POST /api/orders - used for WhatsApp MANUAL mode: owner/helper pastes the
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { contactPhone, homeLabel, rawMessage } = parsed.data;
+  const { contactPhone, homeLabel, rawMessage, prepaid } = parsed.data;
 
   let contact = await prisma.contact.findUnique({
     where: { storeId_phone: { storeId: session.storeId, phone: contactPhone } },
@@ -91,13 +92,10 @@ export async function POST(req: NextRequest) {
       status: "RECEIVED",
       isLikelyOrder,
       flagReason: isLikelyOrder ? null : reason,
+      prepaid,
       items: {
         create: isLikelyOrder
-          ? lines.map((line, idx) => ({
-              itemName: line,
-              quantityRequested: "",
-              sortOrder: idx,
-            }))
+          ? lines.map((line, idx) => ({ ...parseOrderLine(line), sortOrder: idx }))
           : [],
       },
     },

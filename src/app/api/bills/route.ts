@@ -78,10 +78,16 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { status: "VERIFIED" },
-  });
+  // A helper may have already marked the order DELIVERED (that's now a
+  // direct status bump, not gated on this finalize step) before the owner
+  // gets around to actually finalizing the bill - don't regress it back to
+  // VERIFIED in that case.
+  if (order.status !== "DELIVERED") {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { status: "VERIFIED" },
+    });
+  }
 
   // Send the bill back over the same channel the order came in on. Best-effort:
   // the bill and ledger entry above are already committed, so a send failure

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { extractWhatsappTextMessage, sendWhatsappMessage } from "@/lib/whatsapp";
-import { splitOrderIntoLines, assessOrderLikelihood } from "@/lib/orderParsing";
+import { splitOrderIntoLines, assessOrderLikelihood, parseOrderLine } from "@/lib/orderParsing";
 
 // GET: Meta's one-time webhook verification handshake. When you register the
 // webhook URL in the Meta for Developers dashboard, Meta calls this with a
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       flagReason: isLikelyOrder ? null : reason,
       items: {
         create: isLikelyOrder
-          ? lines.map((line, idx) => ({ itemName: line, quantityRequested: "", sortOrder: idx }))
+          ? lines.map((line, idx) => ({ ...parseOrderLine(line), sortOrder: idx }))
           : [],
       },
     },

@@ -23,6 +23,10 @@ const GREETING_PATTERNS = [
   /^[👍🙏😊🙂❤️✅👌\s]+$/u, // emoji-only reactions
 ];
 
+const UNIT_WORD = "kgs?|kilograms?|grams?|g|litres?|liters?|l|ml|packets?|pkt|dozen|pieces?|pcs?";
+const NUMBER_UNIT = new RegExp(`\\d+(\\.\\d+)?\\s*(${UNIT_WORD})\\b`, "i");
+const BARE_UNIT_WORD = new RegExp(`\\b(${UNIT_WORD})\\b`, "i");
+
 // A line "looks like an item" if it has a quantity/unit signal (numbers, kg,
 // packet, etc.), OR is a short phrase (<=3 words) like a bare item name
 // ("milk", "toor dal"). Longer wordy sentences without any quantity signal
@@ -34,11 +38,30 @@ function looksLikeItemLine(line: string): boolean {
   // and times all contain digits too ("Sector 12", "6 pm"). Only count it as
   // a quantity signal when it's actually attached to a unit (space or not),
   // e.g. "2 kg", "500g", "1.5 litres".
-  const hasNumberOrUnit =
-    /\d+(\.\d+)?\s*(kgs?|kilograms?|grams?|g|litres?|liters?|l|ml|packets?|pkt|dozen|pieces?|pcs?)\b/i.test(line) ||
-    /\b(kgs?|kilograms?|grams?|litres?|liters?|packets?|pkt|dozen|pieces?|pcs?)\b/i.test(line);
+  const hasNumberOrUnit = NUMBER_UNIT.test(line) || BARE_UNIT_WORD.test(line);
   const wordCount = line.split(/\s+/).filter(Boolean).length;
   return hasNumberOrUnit || wordCount <= 3;
+}
+
+const LEADING_QTY = new RegExp(`^(\\d+(?:\\.\\d+)?\\s*(?:${UNIT_WORD}))\\s+(.+)$`, "i");
+const TRAILING_QTY = new RegExp(`^(.+?)\\s+(\\d+(?:\\.\\d+)?\\s*(?:${UNIT_WORD}))$`, "i");
+
+export type ParsedItem = { quantityRequested: string; itemName: string };
+
+// Splits a quantity+unit off an item line so the helper sees a clean item
+// name during fulfillment instead of the whole raw line ("2 kg qwe" as one
+// blob). Quantity can lead ("2 kg rice") or trail ("toor dal 500g") - tries
+// both, falls back to treating the whole line as the item name with no
+// parsed quantity if neither shape matches (e.g. "onions", "toor dal").
+export function parseOrderLine(line: string): ParsedItem {
+  const trimmed = line.trim();
+  const leading = trimmed.match(LEADING_QTY);
+  if (leading) return { quantityRequested: leading[1].trim(), itemName: leading[2].trim() };
+
+  const trailing = trimmed.match(TRAILING_QTY);
+  if (trailing) return { quantityRequested: trailing[2].trim(), itemName: trailing[1].trim() };
+
+  return { quantityRequested: "", itemName: trimmed };
 }
 
 export type OrderLikelihood = {

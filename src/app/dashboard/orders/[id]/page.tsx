@@ -21,6 +21,7 @@ type Order = {
   rawMessage: string;
   isLikelyOrder: boolean;
   flagReason: string | null;
+  prepaid: boolean;
   contact: { id: string; homeLabel: string; phone: string } | null;
   items: Item[];
   bill: { subtotal: number; discount: number; total: number; paymentStatus: string } | null;
@@ -30,7 +31,12 @@ const NEXT_STATUS: Record<string, string | null> = {
   RECEIVED: "ASSIGNED",
   ASSIGNED: "FULFILLING",
   FULFILLING: "BILLED",
-  BILLED: null, // billing happens via the finalize action, not a plain status bump
+  // A helper can mark an order delivered directly from BILLED without
+  // waiting on the owner-only bill-finalize step below - packing/delivery
+  // shouldn't block on when the owner gets around to pricing it. The owner
+  // can still finalize the bill (Verify & send) whenever, even after
+  // delivery; see the bills route for why that no longer regresses status.
+  BILLED: "DELIVERED",
   VERIFIED: "DELIVERED",
   DELIVERED: null,
 };
@@ -207,6 +213,15 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
+      {order.prepaid && !order.bill && (
+        <div className="mb-4 rounded-xl2 border border-brand-200 bg-brand-50 p-3">
+          <p className="text-sm font-medium text-brand-700">💰 Marked as already paid for</p>
+          <p className="mt-0.5 text-xs text-brand-600">
+            Use "Verify & send (paid)" when billing so it doesn't add to the customer's credit balance.
+          </p>
+        </div>
+      )}
+
       {isOwner && !["DELIVERED", "CANCELLED"].includes(order.status) && (
         <button
           onClick={cancelOrder}
@@ -249,7 +264,10 @@ export default function OrderDetailPage() {
       <div className="space-y-2">
         {order.items.map((item) => (
           <div key={item.id} className="rounded-xl2 border border-gray-200 bg-white p-3">
-            <p className="mb-2 text-sm font-medium text-gray-900">{item.itemName}</p>
+            <p className="text-sm font-medium text-gray-900">{item.itemName}</p>
+            {item.quantityRequested && (
+              <p className="mb-2 text-xs text-gray-500">Requested: {item.quantityRequested}</p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <input
                 placeholder="Qty fulfilled"
@@ -260,7 +278,7 @@ export default function OrderDetailPage() {
               <div className="flex gap-1">
                 <input
                   type="number"
-                  placeholder="Unit price ₹"
+                  placeholder="Amount ₹"
                   value={item.unitPrice ?? ""}
                   onChange={(e) =>
                     updateItem(item.id, { unitPrice: e.target.value === "" ? null : Number(e.target.value) })
@@ -277,6 +295,7 @@ export default function OrderDetailPage() {
                 </button>
               </div>
             </div>
+            <p className="mt-1 text-xs text-gray-400">Amount is the total for this line, not a per-unit rate.</p>
             <div className="mt-2 flex gap-1.5">
               {["AVAILABLE", "UNAVAILABLE", "SUBSTITUTED"].map((opt) => (
                 <button
@@ -351,7 +370,7 @@ export default function OrderDetailPage() {
             Mark as {NEXT_STATUS[order.status]?.toLowerCase()}
           </button>
         )}
-        {(order.status === "FULFILLING" || order.status === "BILLED") && (
+        {isOwner && (order.status === "FULFILLING" || order.status === "BILLED") && (
           <>
             <button
               onClick={() => finalizeBill(false)}

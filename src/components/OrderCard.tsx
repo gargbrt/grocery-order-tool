@@ -8,6 +8,7 @@ type OrderCardProps = {
   status: string;
   itemCount: number;
   createdAt: string;
+  prepaid?: boolean;
 };
 
 const CHANNEL_ICON: Record<string, string> = {
@@ -16,7 +17,7 @@ const CHANNEL_ICON: Record<string, string> = {
   MANUAL: "✍️",
 };
 
-export function OrderCard({ id, homeLabel, channel, status, itemCount, createdAt }: OrderCardProps) {
+export function OrderCard({ id, homeLabel, channel, status, itemCount, createdAt, prepaid }: OrderCardProps) {
   return (
     <Link
       href={`/dashboard/orders/${id}`}
@@ -25,7 +26,7 @@ export function OrderCard({ id, homeLabel, channel, status, itemCount, createdAt
       <div className="flex items-start justify-between">
         <div>
           <p className="font-medium text-gray-900">
-            {CHANNEL_ICON[channel] ?? ""} {homeLabel}
+            {CHANNEL_ICON[channel] ?? ""} {homeLabel} {prepaid && <span title="Already paid for">💰</span>}
           </p>
           <p className="mt-0.5 text-xs text-gray-500">
             {itemCount} item{itemCount === 1 ? "" : "s"} · {new Date(createdAt).toLocaleString("en-IN", {

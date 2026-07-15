@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { splitOrderIntoLines } from "@/lib/orderParsing";
+import { splitOrderIntoLines, parseOrderLine } from "@/lib/orderParsing";
 import { notifyOrderStatus } from "@/lib/notifications";
 
 async function loadOrderScoped(orderId: string, storeId: string) {
@@ -88,7 +88,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data: {
         isLikelyOrder: true,
         flagReason: null,
-        items: { create: lines.map((line, idx) => ({ itemName: line, quantityRequested: "", sortOrder: idx })) },
+        items: { create: lines.map((line, idx) => ({ ...parseOrderLine(line), sortOrder: idx })) },
       },
     });
   }
@@ -125,14 +125,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     for (const item of items) {
       let lineTotal: number | undefined;
       if (item.unitPrice != null) {
-        // Parse the fulfilled-quantity free text. Only fall back to 1 when the
-        // field is genuinely empty/unparseable - NOT when it parses to a valid
-        // 0 (e.g. helper explicitly marked 0 fulfilled for an unavailable item).
-        // A naive `parseFloat(x) || 1` fallback treats 0 as falsy and would
-        // wrongly bill a full unit for an item the customer never received.
-        const parsedQty = item.quantityFulfilled ? parseFloat(item.quantityFulfilled) : NaN;
-        const qty = Number.isNaN(parsedQty) ? 1 : parsedQty;
-        lineTotal = item.availability === "UNAVAILABLE" ? 0 : item.unitPrice * qty;
+        // `unitPrice` here is really "the amount for this whole line" - the
+        // owner enters what they're charging for the requested quantity
+        // directly (e.g. ₹120 for the "2 kg" of qwe), not a per-unit rate to
+        // be multiplied. Keeps the mental math on the person who actually
+        // knows the price, not the app guessing at a multiplication.
+        lineTotal = item.availability === "UNAVAILABLE" ? 0 : item.unitPrice;
       }
       // updateMany + orderId in the where clause as defense-in-depth, even
       // though we already validated membership above - belt and suspenders
