@@ -1,0 +1,9 @@
+{
+  "name": "Store Orders",
+  "short_name": "Orders",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#16a34a",
+  "icons": []
+}

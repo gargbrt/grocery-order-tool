@@ -1,0 +1,226 @@
+// Prisma schema for the Grocery Order Management Tool
+// DB: PostgreSQL (Supabase or Neon free tier)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  HELPER
+}
+
+enum Channel {
+  WHATSAPP
+  TELEGRAM
+  MANUAL
+  MCP // orders placed by a customer through the Claude MCP ordering tool
+}
+
+enum OrderStatus {
+  RECEIVED
+  ASSIGNED
+  FULFILLING
+  BILLED
+  VERIFIED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  CREDIT
+}
+
+enum ItemAvailability {
+  PENDING
+  AVAILABLE
+  UNAVAILABLE
+  SUBSTITUTED
+}
+
+model Store {
+  id                    String   @id @default(cuid())
+  name                  String
+  address               String?
+  whatsappMode          String   @default("MANUAL") // "MANUAL" | "CLOUD_API"
+  whatsappPhoneNumberId String? // Meta Cloud API phone_number_id, once set up
+  whatsappAccessToken   String? // sensitive - consider moving to a secrets manager before real production use
+  whatsappVerifyToken   String? // arbitrary string you choose, used for Meta's webhook handshake
+  telegramBotToken      String? // set once owner creates bot via BotFather
+  telegramBotUsername   String?
+  paymentsModuleEnabled Boolean  @default(false) // subscription-gated
+  razorpayKeyId         String?
+  createdAt             DateTime @default(now())
+
+  users          User[]
+  contacts       Contact[]
+  orders         Order[]
+  priceOverrides PriceOverride[]
+  catalogItems   CatalogItem[]
+}
+
+// A store's list of items available to order - what the MCP ordering tool
+// shows customers via grocery_list_available_items. Optional for stores that
+// only take freeform WhatsApp/Telegram orders; required if you want the MCP
+// "browse and order" flow to work.
+model CatalogItem {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  name      String
+  unit      String? // e.g. "kg", "packet", "litre" - shown to the customer, not enforced
+  price     Float
+  inStock   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id])
+  name         String
+  phone        String   @unique
+  passwordHash String
+  role         Role
+  // Fine-grained permission overrides for helpers (owner always has full access)
+  canViewPricing Boolean @default(false)
+  canViewContactDetails Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  assignedOrders Order[] @relation("AssignedHelper")
+  auditLogs      AuditLog[]
+
+  @@index([storeId])
+}
+
+// A "Home" is the household/contact profile a phone number maps to
+model Contact {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id])
+  homeLabel   String // e.g. "Sharma Household - Flat 4B"
+  address     String?
+  phone       String // primary phone, E.164 format e.g. +9198XXXXXXXX
+  telegramChatId String? // set once they've messaged the bot
+  whatsappWaId   String? // WhatsApp ID once known
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  orders        Order[]
+  ledgerEntries LedgerEntry[]
+  priceOverrides PriceOverride[]
+
+  @@unique([storeId, phone])
+  @@index([storeId])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  storeId        String
+  store          Store       @relation(fields: [storeId], references: [id])
+  contactId      String?
+  contact        Contact?    @relation(fields: [contactId], references: [id])
+  channel        Channel
+  rawMessage     String // original text as sent by customer
+  status         OrderStatus @default(RECEIVED)
+  isLikelyOrder  Boolean     @default(true) // false => surfaced in "Needs review" tab, never silently dropped
+  flagReason     String? // why it was flagged, shown to the owner for context
+  assignedToId   String?
+  assignedTo     User?       @relation("AssignedHelper", fields: [assignedToId], references: [id])
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  items    OrderItem[]
+  bill     Bill?
+  auditLogs AuditLog[]
+
+  @@index([storeId])
+  @@index([contactId])
+  @@index([assignedToId])
+}
+
+model OrderItem {
+  id               String            @id @default(cuid())
+  orderId          String
+  order            Order             @relation(fields: [orderId], references: [id])
+  itemName         String
+  quantityRequested String // free text e.g. "2 kg", "1 packet" - kept flexible on purpose
+  quantityFulfilled String?
+  unitPrice        Float?
+  lineTotal        Float?
+  availability     ItemAvailability  @default(PENDING)
+  substitutionNote String?
+  sortOrder        Int               @default(0)
+
+  @@index([orderId])
+}
+
+model Bill {
+  id            String        @id @default(cuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+  subtotal      Float
+  discount      Float         @default(0)
+  total         Float
+  paymentStatus PaymentStatus @default(UNPAID)
+  paymentMode   String? // "CASH" | "UPI" | "CREDIT"
+  razorpayPaymentLink String?
+  razorpayPaymentId  String?
+  finalizedAt   DateTime      @default(now())
+}
+
+model LedgerEntry {
+  id            String   @id @default(cuid())
+  contactId     String
+  contact       Contact  @relation(fields: [contactId], references: [id])
+  billId        String?
+  amount        Float
+  runningBalance Float
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([contactId])
+}
+
+// Lets the owner set "this customer always pays ₹X for item Y" - prefilled
+// during billing but always editable per-order (owner can still overwrite).
+model PriceOverride {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  itemName  String // matched case-insensitively against OrderItem.itemName
+  price     Float
+  updatedAt DateTime @updatedAt
+
+  @@unique([contactId, itemName])
+  @@index([storeId])
+}
+
+// Simple audit trail: who changed what, when
+model AuditLog {
+  id        String   @id @default(cuid())
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // e.g. "STATUS_CHANGE", "BILL_EDIT"
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([userId])
+}
