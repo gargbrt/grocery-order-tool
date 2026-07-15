@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { sendWhatsappMessage } from "@/lib/whatsapp";
 
 const FinalizeSchema = z.object({
   orderId: z.string(),
@@ -82,17 +83,30 @@ export async function POST(req: NextRequest) {
     data: { status: "VERIFIED" },
   });
 
-  // Send the bill back over the same channel the order came in on
-  if (order.channel === "TELEGRAM" && order.contact.telegramChatId && order.store.telegramBotToken) {
-    const lines = order.items
-      .map((i) => `${i.itemName} — ${i.quantityFulfilled || i.quantityRequested || ""} — ₹${i.lineTotal ?? 0}`)
-      .join("\n");
-    const text = `Your bill from ${order.store.name}:\n\n${lines}\n\nSubtotal: ₹${subtotal}\nDiscount: ₹${discount}\nTotal: ₹${total}\n\nStatus: ${markPaid ? "Paid" : "On credit"}`;
-    await sendTelegramMessage(order.store.telegramBotToken, order.contact.telegramChatId, text);
+  // Send the bill back over the same channel the order came in on. Best-effort:
+  // the bill and ledger entry above are already committed, so a send failure
+  // (bot blocked, network blip) shouldn't turn into a 500 for something that
+  // actually succeeded - the owner can always resend the bill text manually.
+  const lines = order.items
+    .map((i) => `${i.itemName} — ${i.quantityFulfilled || i.quantityRequested || ""} — ₹${i.lineTotal ?? 0}`)
+    .join("\n");
+  const text = `Your bill from ${order.store.name}:\n\n${lines}\n\nSubtotal: ₹${subtotal}\nDiscount: ₹${discount}\nTotal: ₹${total}\n\nStatus: ${markPaid ? "Paid" : "On credit"}`;
+  try {
+    if (order.contact.telegramChatId && order.store.telegramBotToken) {
+      await sendTelegramMessage(order.store.telegramBotToken, order.contact.telegramChatId, text);
+    } else if (order.contact.whatsappWaId && order.store.whatsappPhoneNumberId && order.store.whatsappAccessToken) {
+      await sendWhatsappMessage(
+        order.store.whatsappPhoneNumberId,
+        order.store.whatsappAccessToken,
+        order.contact.whatsappWaId,
+        text
+      );
+    }
+    // WhatsApp manual mode (no Cloud API creds): no auto-send possible - the
+    // owner sends the bill text manually on their own phone.
+  } catch (err) {
+    console.error("Bill notification failed:", err);
   }
-  // WhatsApp manual mode: no auto-send possible (owner sends manually on their phone).
-  // WhatsApp Cloud API mode: to be wired in once Meta verification is complete -
-  // same shape as the Telegram block above, using the Cloud API's /messages endpoint.
 
   return NextResponse.json({ bill });
 }

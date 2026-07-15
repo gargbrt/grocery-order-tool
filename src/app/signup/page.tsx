@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { extractErrorMessage } from "@/lib/errors";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function SignupPage() {
     setLoading(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.error?.formErrors?.[0] || body.error || "Couldn't create your store - please check the fields.");
+      setError(extractErrorMessage(body, "Couldn't create your store - please check the fields."));
       return;
     }
     router.push("/dashboard");

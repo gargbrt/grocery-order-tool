@@ -3,11 +3,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { splitOrderIntoLines } from "@/lib/orderParsing";
+import { notifyOrderStatus } from "@/lib/notifications";
 
 async function loadOrderScoped(orderId: string, storeId: string) {
   return prisma.order.findFirst({
     where: { id: orderId, storeId },
-    include: { items: true, contact: true, bill: true, assignedTo: true },
+    include: { items: true, contact: true, bill: true, assignedTo: true, store: true },
   });
 }
 
@@ -73,6 +74,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { status, assignedToId, items, acceptAsOrder } = parsed.data;
+
+  if (status === "CANCELLED" && session.role !== "OWNER") {
+    return NextResponse.json({ error: "Only the store owner can cancel an order" }, { status: 403 });
+  }
 
   if (acceptAsOrder && !order.isLikelyOrder) {
     // Regenerate items from the raw message now that a human has confirmed it's a real order
@@ -163,6 +168,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         detail: `${order.status} -> ${status}`,
       },
     });
+    await notifyOrderStatus({ status, contact: order.contact, store: order.store });
   }
 
   return NextResponse.json({ order: updated });

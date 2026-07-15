@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { OrderCard } from "@/components/OrderCard";
+import { MiniCalendar } from "@/components/MiniCalendar";
 
 type Order = {
   id: string;
@@ -12,30 +13,48 @@ type Order = {
   items: { id: string }[];
 };
 
+type Category = "all" | "open" | "review" | "delivered" | "cancelled";
+
+const CATEGORIES: { key: Category; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "open", label: "Open" },
+  { key: "review", label: "Needs Review" },
+  { key: "delivered", label: "Delivered" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
-  const [tab, setTab] = useState<"orders" | "review">("orders");
+  const [tab, setTab] = useState<Category>("all");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
+    const params = new URLSearchParams({ category: tab });
+    if (selectedDate) params.set("date", selectedDate);
     const [ordersRes, reviewRes] = await Promise.all([
-      fetch(`/api/orders${tab === "review" ? "?review=true" : ""}`),
-      fetch("/api/orders?review=true"),
+      fetch(`/api/orders?${params.toString()}`),
+      fetch("/api/orders?category=review"),
     ]);
     const ordersBody = await ordersRes.json();
     const reviewBody = await reviewRes.json();
     setOrders(ordersBody.orders ?? []);
     setReviewCount((reviewBody.orders ?? []).length);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
 
   useEffect(() => {
     load();
+    // Near-real-time refresh: picks up orders/status changes made from other
+    // devices/sessions (e.g. a helper's phone, or the owner logged in elsewhere)
+    // without the user having to manually reload.
+    const interval = setInterval(() => load(true), 10000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, selectedDate]);
 
   return (
     <div>
@@ -49,32 +68,49 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      {reviewCount > 0 && (
-        <div className="mb-3 flex gap-2 rounded-full bg-gray-100 p-1">
-          <button
-            onClick={() => setTab("orders")}
-            className={`tap-target flex-1 rounded-full text-sm font-medium ${
-              tab === "orders" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
-            }`}
-          >
-            Orders
-          </button>
-          <button
-            onClick={() => setTab("review")}
-            className={`tap-target flex-1 rounded-full text-sm font-medium ${
-              tab === "review" ? "bg-white shadow-sm text-amber-700" : "text-gray-500"
-            }`}
-          >
-            Needs review ({reviewCount})
+      <MiniCalendar selectedDate={selectedDate} onSelect={setSelectedDate} />
+
+      {selectedDate && (
+        <div className="mb-3 flex items-center justify-between rounded-xl2 border border-brand-200 bg-brand-50 px-3 py-2">
+          <p className="text-xs font-medium text-brand-700">
+            Showing orders for{" "}
+            {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })}
+          </p>
+          <button onClick={() => setSelectedDate(null)} className="text-xs font-medium text-brand-700 underline">
+            Clear
           </button>
         </div>
       )}
 
+      <div className="mb-3 flex gap-1 overflow-x-auto rounded-full bg-gray-100 p-1">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => setTab(c.key)}
+            className={`tap-target shrink-0 rounded-full px-3 text-sm font-medium ${
+              tab === c.key
+                ? c.key === "review"
+                  ? "bg-white text-amber-700 shadow-sm"
+                  : "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500"
+            }`}
+          >
+            {c.label}
+            {c.key === "review" && reviewCount > 0 ? ` (${reviewCount})` : ""}
+          </button>
+        ))}
+      </div>
+
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
       {!loading && orders.length === 0 && (
         <p className="rounded-xl2 border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-          No orders yet. Orders sent to your Telegram bot appear here automatically. For WhatsApp
-          (manual mode), tap "+ WhatsApp order" to paste one in.
+          {tab === "all"
+            ? 'No orders yet. Orders sent to your Telegram bot appear here automatically. For WhatsApp (manual mode), tap "+ WhatsApp order" to paste one in.'
+            : "No orders in this category."}
         </p>
       )}
 

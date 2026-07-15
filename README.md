@@ -97,6 +97,21 @@ a desktop.
 - ✅ **MCP server** (`mcp-server/`) — lets anyone with a Claude subscription
   browse a store's catalog and place an order directly through Claude, no
   app install needed. See [`mcp-server/README.md`](mcp-server/README.md).
+- ✅ **Editable Homes** — owner can rename, re-address, and correct the phone
+  number on any Home (also how you link a second channel to the same
+  customer, e.g. add their WhatsApp number to a Telegram-only Home)
+- ✅ **Ledger detail per Home** — tap any balance to see that Home's full
+  order and payment/credit history; accounts with a balance untouched for 30+
+  days are flagged as overdue
+- ✅ **Orders categorized**: All / Open / Needs Review / Delivered / Cancelled,
+  plus a collapsible calendar to jump straight to any day's orders
+- ✅ **Daily/weekly/monthly summary** — orders received/delivered/cancelled,
+  money received, new receivables, and current total outstanding
+- ✅ **Owner can cancel any order**, not just ones flagged for review
+- ✅ **Automatic status updates to the customer** — Telegram always, WhatsApp
+  when Cloud API is configured — sent back on the same chat the order came in on
+- ✅ Near-real-time dashboard refresh, so multiple logged-in devices/sessions
+  stay in sync without a manual reload
 
 ## Roadmap
 
@@ -107,6 +122,9 @@ a desktop.
 - [ ] WhatsApp Cloud API production number (post Meta business verification)
 - [ ] PDF/image bill generation instead of plain text
 - [ ] Payment status reminders for outstanding credit
+- [ ] Per-order delivery address override — let the owner set/change a
+  one-off delivery address for a specific order without editing the Home's
+  saved address
 
 **Phase 3**
 - [ ] Basic inventory/stock awareness — flag out-of-stock items automatically

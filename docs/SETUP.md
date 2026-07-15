@@ -5,11 +5,12 @@ list, and roadmap, see the [main README](../README.md).*
 
 ## 0. This has now been tested end-to-end against a real database
 
-A real Supabase project was created (`grocery-order-tool`, region `ap-south-1`,
-free tier confirmed at ₹0/month) and the schema in `prisma/schema.prisma` was
-pushed to it and verified — the file `prisma/supabase_test_migration.sql` is
-a faithful copy of exactly what's live there. What was actually verified
-against real rows, not just simulated:
+During development, a real Supabase project (free tier, confirmed ₹0/month)
+was created and the schema in `prisma/schema.prisma` was pushed to it and
+verified — `prisma/supabase_test_migration.sql` is a faithful copy of that
+schema for reference. That project was specific to development and isn't
+something this repo's users share; follow "One-time setup" below to create
+your own. What was actually verified against real rows, not just simulated:
 
 - Full order lifecycle: contact created → order + items → helper fulfillment →
   bill finalized with a discount → ledger entry written, matching hand-computed
@@ -40,8 +41,11 @@ codebase):
 Security is off on all tables. This is safe as built, because the app never
 uses the Supabase anon/browser key — every query goes through our Next.js
 server with authorization enforced in the API routes (see section on Roles &
-permissions). It's still good defense-in-depth to enable; ask me for the SQL
-if you want it as a second layer.
+permissions). It's still good defense-in-depth to enable: run
+`ALTER TABLE "<TableName>" ENABLE ROW LEVEL SECURITY;` for each table in
+`prisma/schema.prisma`, then add policies scoped to your own access pattern
+(or just service-role-only if, like this app, nothing queries Supabase
+directly from the browser).
 
 **Still not tested, because it needs live network I don't have:** the actual
 npm install / Next.js dev server, and the Telegram/WhatsApp webhook round
@@ -55,9 +59,9 @@ order correctly matched item names against the catalog case-insensitively
 (prefilling price for exact matches, leaving it `null` for a freeform item
 the store doesn't stock, so the owner prices it manually); the order-status
 phone-verification query returns the real owner phone for the caller to
-compare against. A demo store ("Demo Kirana Store") with 5 real catalog
-items is live in the Supabase project right now if you want to try placing
-an order once the MCP server is deployed and connected.
+compare against. Development used a demo store with 5 catalog items to
+verify this end-to-end - to try it yourself, add a few `CatalogItem` rows
+to your own store once the MCP server is deployed and connected.
 
 **Multi-tenant isolation, audited and one real bug fixed:** every API route
 that reads or writes data was checked line-by-line for whether it actually

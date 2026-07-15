@@ -4,21 +4,52 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { splitOrderIntoLines, assessOrderLikelihood } from "@/lib/orderParsing";
 
-// GET /api/orders?status=RECEIVED&review=true - list orders for the logged-in user's store.
-// review=true returns only flagged (isLikelyOrder=false) orders for the "Needs review" tab;
-// by default (no review param) flagged orders are excluded from the main list.
+type Category = "all" | "open" | "review" | "delivered" | "cancelled";
+
+// GET /api/orders?category=all|open|review|delivered|cancelled&contactId=xxx&date=YYYY-MM-DD
+// - list orders for the logged-in user's store.
+// category:
+//   all       - everything, including flagged "needs review" messages
+//   open      - real orders (isLikelyOrder=true) not yet delivered/cancelled (default)
+//   review    - flagged messages (isLikelyOrder=false) for the "Needs review" tab
+//   delivered - status=DELIVERED
+//   cancelled - status=CANCELLED
+// contactId scopes to one Home (used by the Ledger detail view).
+// date scopes to orders created on that calendar day (used by the calendar view).
 export async function GET(req: NextRequest) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const status = req.nextUrl.searchParams.get("status") || undefined;
-  const review = req.nextUrl.searchParams.get("review") === "true";
+  const params = req.nextUrl.searchParams;
+  // `review=true` kept as a back-compat alias for `category=review`.
+  const category: Category = (params.get("category") as Category) || (params.get("review") === "true" ? "review" : "open");
+  const contactId = params.get("contactId") || undefined;
+  const date = params.get("date") || undefined;
+
+  let createdAt: { gte: Date; lt: Date } | undefined;
+  if (date) {
+    const start = new Date(`${date}T00:00:00`);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    createdAt = { gte: start, lt: end };
+  }
+
+  const categoryFilter: Record<string, unknown> = {
+    all: {},
+    open: { isLikelyOrder: true, status: { notIn: ["DELIVERED", "CANCELLED"] } },
+    // Exclude CANCELLED so a dismissed ("Not an order") flagged message
+    // doesn't linger in Needs Review forever - it's been handled.
+    review: { isLikelyOrder: false, status: { not: "CANCELLED" } },
+    delivered: { status: "DELIVERED" },
+    cancelled: { status: "CANCELLED" },
+  }[category];
 
   const orders = await prisma.order.findMany({
     where: {
       storeId: session.storeId,
-      isLikelyOrder: review ? false : true,
-      ...(status ? { status: status as any } : {}),
+      ...categoryFilter,
+      ...(contactId ? { contactId } : {}),
+      ...(createdAt ? { createdAt } : {}),
     },
     include: { items: true, contact: true, bill: true },
     orderBy: { createdAt: "desc" },

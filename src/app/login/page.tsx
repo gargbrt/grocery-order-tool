@@ -18,7 +18,7 @@ export default function LoginPage() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify({ phone: `+91${phone}`, password }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -39,14 +39,20 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Phone number</label>
-            <input
-              type="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+91 98XXXXXXXX"
-              className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
+            <div className="flex items-stretch gap-2">
+              <span className="tap-target flex items-center rounded-lg border border-gray-300 bg-gray-50 px-3 text-base text-gray-600">
+                +91
+              </span>
+              <input
+                type="tel"
+                required
+                inputMode="numeric"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="98XXXXXXXX"
+                className="tap-target w-full min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Password</label>

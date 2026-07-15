@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     contactId: c.id,
     homeLabel: c.homeLabel,
     balance: c.ledgerEntries[0]?.runningBalance ?? 0,
+    lastActivityAt: c.ledgerEntries[0]?.createdAt ?? null,
   }));
 
   return NextResponse.json({ balances });

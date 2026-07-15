@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Orders", icon: "🧾" },
   { href: "/dashboard/contacts", label: "Homes", icon: "🏠" },
   { href: "/dashboard/ledger", label: "Ledger", icon: "📒", ownerOnly: true },
+  { href: "/dashboard/summary", label: "Summary", icon: "📊", ownerOnly: true },
   { href: "/dashboard/team", label: "Team", icon: "👥", ownerOnly: true },
 ];
 

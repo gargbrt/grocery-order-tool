@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { extractErrorMessage } from "@/lib/errors";
 
 type TeamMember = {
   id: string;
@@ -85,7 +86,7 @@ function InviteHelperModal({ onClose, onCreated }: { onClose: () => void; onCrea
     setSubmitting(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.error?.formErrors?.[0] || body.error || "Couldn't create the helper account.");
+      setError(extractErrorMessage(body, "Couldn't create the helper account."));
       return;
     }
     onCreated();

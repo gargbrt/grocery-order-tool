@@ -45,6 +45,14 @@ export default function OrderDetailPage() {
   const [discount, setDiscount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/session")
+      .then((r) => r.json())
+      .then((body) => setIsOwner(body.role === "OWNER"))
+      .catch(() => setIsOwner(false));
+  }, []);
 
   async function load() {
     const res = await fetch(`/api/orders/${id}`);
@@ -143,6 +151,19 @@ export default function OrderDetailPage() {
     router.push("/dashboard");
   }
 
+  async function cancelOrder() {
+    if (!order) return;
+    if (!window.confirm("Mark this order as cancelled? This can't be undone.")) return;
+    setSaving(true);
+    await fetch(`/api/orders/${order.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "CANCELLED" }),
+    });
+    setSaving(false);
+    router.push("/dashboard");
+  }
+
   async function advanceStatus() {
     if (!order) return;
     const next = NEXT_STATUS[order.status];
@@ -181,8 +202,20 @@ export default function OrderDetailPage() {
           <h2 className="text-lg font-semibold text-gray-900">{order.contact?.homeLabel ?? "Unknown home"}</h2>
           <p className="text-xs text-gray-500">{order.contact?.phone}</p>
         </div>
-        <StatusChip status={order.status} />
+        <div className="flex items-center gap-2">
+          <StatusChip status={order.status} />
+        </div>
       </div>
+
+      {isOwner && !["DELIVERED", "CANCELLED"].includes(order.status) && (
+        <button
+          onClick={cancelOrder}
+          disabled={saving}
+          className="tap-target mb-4 w-full rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+        >
+          Cancel order (not a real order / mistake)
+        </button>
+      )}
 
       <div className="mb-4 rounded-xl2 border border-gray-200 bg-white p-3">
         <p className="mb-1 text-xs font-medium text-gray-500">Original message</p>
