@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { extractErrorMessage } from "@/lib/errors";
+import { PhoneInput, toE164, fromE164 } from "@/components/PhoneInput";
 
 type Contact = {
   id: string;
@@ -83,7 +84,7 @@ function EditHomeModal({
   onSaved: () => void;
 }) {
   const [homeLabel, setHomeLabel] = useState(contact.homeLabel);
-  const [phone, setPhone] = useState(contact.phone);
+  const [phone, setPhone] = useState(fromE164(contact.phone));
   const [address, setAddress] = useState(contact.address ?? "");
   const [notes, setNotes] = useState(contact.notes ?? "");
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +96,7 @@ function EditHomeModal({
     const res = await fetch(`/api/contacts/${contact.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ homeLabel, phone, address: address || null, notes: notes || null }),
+      body: JSON.stringify({ homeLabel, phone: toE164(phone), address: address || null, notes: notes || null }),
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -117,12 +118,7 @@ function EditHomeModal({
             onChange={(e) => setHomeLabel(e.target.value)}
             className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
-          <input
-            placeholder="Phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
+          <PhoneInput value={phone} onChange={setPhone} />
           <input
             placeholder="Address (optional)"
             value={address}

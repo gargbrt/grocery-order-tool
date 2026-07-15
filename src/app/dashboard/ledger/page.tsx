@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { OVERDUE_DAYS, isOverdue as isOverdueRaw } from "@/lib/ledgerOverdue";
 
 type Balance = { contactId: string; homeLabel: string; balance: number; lastActivityAt: string | null };
 
-const OVERDUE_DAYS = 30;
-
 function isOverdue(b: Balance) {
-  if (b.balance <= 0 || !b.lastActivityAt) return false;
-  const ageMs = Date.now() - new Date(b.lastActivityAt).getTime();
-  return ageMs > OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  return isOverdueRaw(b.balance, b.lastActivityAt);
 }
+
+type SortMode = "amount" | "name";
 
 export default function LedgerPage() {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortMode, setSortMode] = useState<SortMode>("amount");
 
   async function load(silent = false) {
     const res = await fetch("/api/ledger");
@@ -44,11 +44,32 @@ export default function LedgerPage() {
       )}
       {overdueCount === 0 && <div className="mb-4" />}
 
+      <div className="mb-3 flex gap-2 rounded-full bg-gray-100 p-1">
+        <button
+          onClick={() => setSortMode("amount")}
+          className={`tap-target flex-1 rounded-full text-sm font-medium ${
+            sortMode === "amount" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+          }`}
+        >
+          Sort: Amount due
+        </button>
+        <button
+          onClick={() => setSortMode("name")}
+          className={`tap-target flex-1 rounded-full text-sm font-medium ${
+            sortMode === "name" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+          }`}
+        >
+          Sort: A-Z
+        </button>
+      </div>
+
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
 
       <div className="space-y-2">
-        {balances
-          .sort((a, b) => b.balance - a.balance)
+        {[...balances]
+          .sort((a, b) =>
+            sortMode === "name" ? a.homeLabel.localeCompare(b.homeLabel) : b.balance - a.balance
+          )
           .map((b) => {
             const overdue = isOverdue(b);
             return (

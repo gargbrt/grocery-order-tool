@@ -38,7 +38,8 @@ export function MiniCalendar({
         onClick={() => setOpen((o) => !o)}
         className="tap-target flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600"
       >
-        📅 Calendar {open ? "▲" : "▼"}
+        📅 Today: {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}{" "}
+        {open ? "▲" : "▼"}
       </button>
 
       {open && (

@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { PhoneInput, toE164 } from "@/components/PhoneInput";
+import { PasswordInput } from "@/components/PasswordInput";
+import { PASSWORD_REQUIREMENTS_TEXT } from "@/lib/passwordPolicy";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,7 +21,7 @@ export default function LoginPage() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: `+91${phone}`, password }),
+      body: JSON.stringify({ phone: toE164(phone), password }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -39,30 +42,12 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Phone number</label>
-            <div className="flex items-stretch gap-2">
-              <span className="tap-target flex items-center rounded-lg border border-gray-300 bg-gray-50 px-3 text-base text-gray-600">
-                +91
-              </span>
-              <input
-                type="tel"
-                required
-                inputMode="numeric"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                placeholder="98XXXXXXXX"
-                className="tap-target w-full min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
+            <PhoneInput value={phone} onChange={setPhone} required />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
+            <PasswordInput value={password} onChange={setPassword} required autoComplete="current-password" />
+            <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS_TEXT}</p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button

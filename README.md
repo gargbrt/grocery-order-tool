@@ -125,6 +125,13 @@ a desktop.
 - [ ] Per-order delivery address override — let the owner set/change a
   one-off delivery address for a specific order without editing the Home's
   saved address
+- [ ] Store returns/refunds — a return flow that reverses items off a
+  finalized bill and writes the corresponding adjustment back to the Home's
+  ledger and the accounting summary
+- [ ] OTP login by mobile number, once a real SMS gateway (Twilio, MSG91,
+  etc.) is integrated. A Telegram-DM-based OTP is technically possible sooner
+  but needs owner/helper accounts linked to Telegram first (today only
+  customers are); deferred pending a decision on which to build
 
 **Phase 3**
 - [ ] Basic inventory/stock awareness — flag out-of-stock items automatically
@@ -210,18 +217,26 @@ docs/
 ## Testing
 
 This project includes real unit tests for the parts where a silent bug would
-cost real money or lose real orders — the order-detection heuristic and the
-billing/ledger math:
+cost real money or lose real orders — the order-detection heuristic, the
+billing/ledger math, cross-tenant isolation, and a few UI-adjacent bugs
+(error-message rendering, Orders categorization, ledger overdue calc) that
+have actually broken in practice. Run the whole suite in one shot:
 
 ```bash
-npx tsx scripts/test-order-parsing.ts
-npx tsx scripts/test-billing-math.ts
-npx tsx scripts/test-line-total.ts
+npm run test
 ```
 
+which runs every `scripts/test-*.ts` script and reports a combined pass/fail
+(see `scripts/regression.ts`). A GitHub Actions workflow
+(`.github/workflows/regression.yml`) runs the same suite plus a `src/`-scoped
+typecheck on every push and pull request, so a regression gets flagged before
+it merges rather than after.
+
 These are plain scripts, not a test framework, kept deliberately simple so
-they're easy to read and extend. Contributions that port these to a proper
-test runner (Vitest/Jest) are welcome.
+they're easy to read and extend. When you fix a bug or add logic worth
+protecting, add a new `scripts/test-*.ts` and list it in
+`TEST_SCRIPTS` in `scripts/regression.ts`. Contributions that port these to a
+proper test runner (Vitest/Jest) are welcome.
 
 ## Contributing
 

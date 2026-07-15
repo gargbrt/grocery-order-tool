@@ -27,6 +27,7 @@ export default function LedgerDetailPage() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRecordEntry, setShowRecordEntry] = useState(false);
 
   async function load(silent = false) {
     const [contactBody, ledgerBody, ordersBody] = await Promise.all([
@@ -68,6 +69,13 @@ export default function LedgerDetailPage() {
               ₹{currentBalance.toFixed(2)}
             </p>
           </div>
+
+          <button
+            onClick={() => setShowRecordEntry(true)}
+            className="tap-target mb-4 w-full rounded-lg border border-brand-600 py-2 text-sm font-medium text-brand-700"
+          >
+            Record payment / add amount due
+          </button>
 
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Orders</h3>
           <div className="mb-4 space-y-2">
@@ -117,6 +125,108 @@ export default function LedgerDetailPage() {
       )}
 
       {!loading && !contact && <p className="text-sm text-gray-500">Home not found.</p>}
+
+      {showRecordEntry && (
+        <RecordEntryModal
+          contactId={contactId}
+          onClose={() => setShowRecordEntry(false)}
+          onSaved={() => {
+            setShowRecordEntry(false);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecordEntryModal({
+  contactId,
+  onClose,
+  onSaved,
+}: {
+  contactId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [type, setType] = useState<"PAYMENT" | "CHARGE">("PAYMENT");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch("/api/ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId, amount: Number(amount), type, note: note || undefined }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError("Couldn't save - check the amount and try again.");
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-end bg-black/40 sm:items-center sm:justify-center">
+      <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-xl2">
+        <h3 className="mb-3 text-base font-semibold text-gray-900">Record payment / amount due</h3>
+        <div className="space-y-3">
+          <div className="flex gap-2 rounded-full bg-gray-100 p-1">
+            <button
+              onClick={() => setType("PAYMENT")}
+              className={`tap-target flex-1 rounded-full text-sm font-medium ${
+                type === "PAYMENT" ? "bg-white text-brand-700 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              Payment received
+            </button>
+            <button
+              onClick={() => setType("CHARGE")}
+              className={`tap-target flex-1 rounded-full text-sm font-medium ${
+                type === "CHARGE" ? "bg-white text-amber-700 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              Amount due
+            </button>
+          </div>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Amount ₹"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+          <input
+            placeholder="Note (optional, e.g. 'Cash paid at shop')"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || !amount || Number(amount) <= 0}
+            className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

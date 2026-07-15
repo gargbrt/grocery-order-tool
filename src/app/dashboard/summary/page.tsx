@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type Period = "daily" | "weekly" | "monthly";
 
@@ -64,24 +65,33 @@ export default function SummaryPage() {
       {!loading && summary && (
         <div className="space-y-2">
           <div className="grid grid-cols-3 gap-2">
-            <StatTile label="Received" value={summary.ordersReceived} />
-            <StatTile label="Delivered" value={summary.ordersDelivered} />
-            <StatTile label="Cancelled" value={summary.ordersCancelled} />
+            <StatTile href="/dashboard" label="Received" value={summary.ordersReceived} />
+            <StatTile href="/dashboard?category=delivered" label="Delivered" value={summary.ordersDelivered} />
+            <StatTile href="/dashboard?category=cancelled" label="Cancelled" value={summary.ordersCancelled} />
           </div>
 
-          <div className="rounded-xl2 border border-gray-200 bg-white p-3">
-            <div className="flex items-center justify-between">
+          <div className="overflow-hidden rounded-xl2 border border-gray-200 bg-white">
+            <Link
+              href={`/dashboard/summary/money-received?period=${period}`}
+              className="tap-target flex items-center justify-between p-3 active:bg-gray-50"
+            >
               <p className="text-sm text-gray-600">Money received ({PERIOD_LABELS[period].toLowerCase()})</p>
               <p className="text-sm font-semibold text-brand-600">₹{summary.moneyReceived.toFixed(2)}</p>
-            </div>
-            <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+            </Link>
+            <Link
+              href={`/dashboard/summary/receivables-added?period=${period}`}
+              className="tap-target flex items-center justify-between border-t border-gray-100 p-3 active:bg-gray-50"
+            >
               <p className="text-sm text-gray-600">New receivables added ({PERIOD_LABELS[period].toLowerCase()})</p>
               <p className="text-sm font-semibold text-amber-600">₹{summary.receivablesAdded.toFixed(2)}</p>
-            </div>
-            <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+            </Link>
+            <Link
+              href="/dashboard/ledger"
+              className="tap-target flex items-center justify-between border-t border-gray-100 p-3 active:bg-gray-50"
+            >
               <p className="text-sm font-medium text-gray-700">Total outstanding right now</p>
               <p className="text-base font-semibold text-gray-900">₹{summary.totalOutstanding.toFixed(2)}</p>
-            </div>
+            </Link>
           </div>
         </div>
       )}
@@ -95,11 +105,11 @@ export default function SummaryPage() {
   );
 }
 
-function StatTile({ label, value }: { label: string; value: number }) {
+function StatTile({ href, label, value }: { href: string; label: string; value: number }) {
   return (
-    <div className="rounded-xl2 border border-gray-200 bg-white p-3 text-center">
+    <Link href={href} className="tap-target block rounded-xl2 border border-gray-200 bg-white p-3 text-center active:bg-gray-50">
       <p className="text-xl font-semibold text-gray-900">{value}</p>
       <p className="text-xs text-gray-500">{label}</p>
-    </div>
+    </Link>
   );
 }

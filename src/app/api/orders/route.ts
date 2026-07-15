@@ -3,10 +3,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { splitOrderIntoLines, assessOrderLikelihood } from "@/lib/orderParsing";
+import { getCategoryFilter, type OrderCategory as Category } from "@/lib/orderCategories";
 
-type Category = "all" | "open" | "review" | "delivered" | "cancelled";
-
-// GET /api/orders?category=all|open|review|delivered|cancelled&contactId=xxx&date=YYYY-MM-DD
+// GET /api/orders?category=all|open|review|delivered|cancelled|received&contactId=xxx&date=YYYY-MM-DD
 // - list orders for the logged-in user's store.
 // category:
 //   all       - everything, including flagged "needs review" messages
@@ -14,6 +13,8 @@ type Category = "all" | "open" | "review" | "delivered" | "cancelled";
 //   review    - flagged messages (isLikelyOrder=false) for the "Needs review" tab
 //   delivered - status=DELIVERED
 //   cancelled - status=CANCELLED
+//   received  - real orders (isLikelyOrder=true), any status - matches the Summary
+//               tab's "Received" count (drill-down target)
 // contactId scopes to one Home (used by the Ledger detail view).
 // date scopes to orders created on that calendar day (used by the calendar view).
 export async function GET(req: NextRequest) {
@@ -34,15 +35,7 @@ export async function GET(req: NextRequest) {
     createdAt = { gte: start, lt: end };
   }
 
-  const categoryFilter: Record<string, unknown> = {
-    all: {},
-    open: { isLikelyOrder: true, status: { notIn: ["DELIVERED", "CANCELLED"] } },
-    // Exclude CANCELLED so a dismissed ("Not an order") flagged message
-    // doesn't linger in Needs Review forever - it's been handled.
-    review: { isLikelyOrder: false, status: { not: "CANCELLED" } },
-    delivered: { status: "DELIVERED" },
-    cancelled: { status: "CANCELLED" },
-  }[category];
+  const categoryFilter = getCategoryFilter(category);
 
   const orders = await prisma.order.findMany({
     where: {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { hashPassword } from "@/lib/auth";
+import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 
 // GET /api/team - list everyone with access to this store (owner only)
 export async function GET() {
@@ -32,7 +33,7 @@ export async function GET() {
 const InviteHelperSchema = z.object({
   name: z.string().min(1).max(200),
   phone: z.string().min(6).max(20),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`),
   canViewPricing: z.boolean().default(false),
   canViewContactDetails: z.boolean().default(false),
 });

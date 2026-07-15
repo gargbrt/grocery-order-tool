@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { OrderCard } from "@/components/OrderCard";
 import { MiniCalendar } from "@/components/MiniCalendar";
+import { PhoneInput, toE164 } from "@/components/PhoneInput";
 
 type Order = {
   id: string;
@@ -23,10 +25,16 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
+const VALID_CATEGORIES: Category[] = ["all", "open", "review", "delivered", "cancelled"];
+
 export default function OrdersPage() {
+  const searchParams = useSearchParams();
+  const initialCategory = searchParams.get("category") as Category | null;
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
-  const [tab, setTab] = useState<Category>("all");
+  const [tab, setTab] = useState<Category>(
+    initialCategory && VALID_CATEGORIES.includes(initialCategory) ? initialCategory : "all"
+  );
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -146,7 +154,7 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
     const res = await fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ homeLabel, contactPhone, rawMessage }),
+      body: JSON.stringify({ homeLabel, contactPhone: toE164(contactPhone), rawMessage }),
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -168,12 +176,7 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
             onChange={(e) => setHomeLabel(e.target.value)}
             className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
-          <input
-            placeholder="Phone (+9198XXXXXXXX)"
-            value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
-            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
+          <PhoneInput value={contactPhone} onChange={setContactPhone} />
           <textarea
             placeholder={"Paste the order message, one item per line\ne.g.\n2 kg rice\n1 packet atta"}
             value={rawMessage}

@@ -57,12 +57,15 @@ export async function GET(req: NextRequest) {
         order: { storeId: session.storeId },
       },
     }),
+    // isLikelyOrder: true here so a dismissed "Needs Review" message (never
+    // counted in ordersReceived, since that's real-orders-only) doesn't
+    // inflate this count and break the received vs delivered+cancelled math.
     prisma.auditLog.count({
       where: {
         action: "STATUS_CHANGE",
         detail: { endsWith: "-> CANCELLED" },
         createdAt: { gte: start, lt: end },
-        order: { storeId: session.storeId },
+        order: { storeId: session.storeId, isLikelyOrder: true },
       },
     }),
     prisma.bill.findMany({

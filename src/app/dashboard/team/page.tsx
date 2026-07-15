@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { extractErrorMessage } from "@/lib/errors";
+import { PhoneInput, toE164, fromE164 } from "@/components/PhoneInput";
+import { PasswordInput } from "@/components/PasswordInput";
+import { MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS_TEXT } from "@/lib/passwordPolicy";
 
 type TeamMember = {
   id: string;
@@ -16,6 +19,7 @@ export default function TeamPage() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
+  const [editing, setEditing] = useState<TeamMember | null>(null);
 
   async function load() {
     setLoading(true);
@@ -45,10 +49,17 @@ export default function TeamPage() {
 
       <div className="space-y-2">
         {team.map((member) => (
-          <div key={member.id} className="rounded-xl2 border border-gray-200 bg-white p-3">
+          <button
+            key={member.id}
+            onClick={() => setEditing(member)}
+            className="tap-target block w-full rounded-xl2 border border-gray-200 bg-white p-3 text-left active:scale-[0.99]"
+          >
             <div className="flex items-center justify-between">
               <p className="font-medium text-gray-900">{member.name}</p>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{member.role}</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{member.role}</span>
+                <span className="text-xs text-brand-600">Edit</span>
+              </div>
             </div>
             <p className="text-xs text-gray-500">{member.phone}</p>
             {member.role === "HELPER" && (
@@ -57,11 +68,21 @@ export default function TeamPage() {
                 {member.canViewContactDetails ? "Can see contact details" : "Contact details hidden"}
               </p>
             )}
-          </div>
+          </button>
         ))}
       </div>
 
       {showInvite && <InviteHelperModal onClose={() => setShowInvite(false)} onCreated={load} />}
+      {editing && (
+        <EditTeamMemberModal
+          member={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -81,7 +102,7 @@ function InviteHelperModal({ onClose, onCreated }: { onClose: () => void; onCrea
     const res = await fetch("/api/team", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, password, canViewPricing, canViewContactDetails }),
+      body: JSON.stringify({ name, phone: toE164(phone), password, canViewPricing, canViewContactDetails }),
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -104,19 +125,16 @@ function InviteHelperModal({ onClose, onCreated }: { onClose: () => void; onCrea
             onChange={(e) => setName(e.target.value)}
             className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
-          <input
-            placeholder="Phone (+9198XXXXXXXX)"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
-          <input
-            type="password"
-            placeholder="Set a password for them"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
+          <PhoneInput value={phone} onChange={setPhone} />
+          <div>
+            <PasswordInput
+              value={password}
+              onChange={setPassword}
+              placeholder="Set a password for them"
+              minLength={MIN_PASSWORD_LENGTH}
+            />
+            <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS_TEXT}</p>
+          </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={canViewPricing} onChange={(e) => setCanViewPricing(e.target.checked)} />
             Can see item pricing
@@ -140,10 +158,132 @@ function InviteHelperModal({ onClose, onCreated }: { onClose: () => void; onCrea
           </button>
           <button
             onClick={submit}
-            disabled={submitting || !name || !phone || password.length < 8}
+            disabled={submitting || !name || !phone || password.length < MIN_PASSWORD_LENGTH}
             className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create login"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditTeamMemberModal({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: TeamMember;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(member.name);
+  const [phone, setPhone] = useState(fromE164(member.phone));
+  const [canViewPricing, setCanViewPricing] = useState(member.canViewPricing);
+  const [canViewContactDetails, setCanViewContactDetails] = useState(member.canViewContactDetails);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/team/${member.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        phone: toE164(phone),
+        canViewPricing,
+        canViewContactDetails,
+        newPassword: showResetPassword && newPassword ? newPassword : undefined,
+      }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(extractErrorMessage(body, "Couldn't save changes."));
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-end bg-black/40 sm:items-center sm:justify-center">
+      <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-xl2">
+        <h3 className="mb-3 text-base font-semibold text-gray-900">
+          Edit {member.role === "OWNER" ? "your" : "helper's"} info
+        </h3>
+        <div className="space-y-3">
+          <input
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+          <PhoneInput value={phone} onChange={setPhone} />
+          {member.role === "HELPER" && (
+            <>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={canViewPricing}
+                  onChange={(e) => setCanViewPricing(e.target.checked)}
+                />
+                Can see item pricing
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={canViewContactDetails}
+                  onChange={(e) => setCanViewContactDetails(e.target.checked)}
+                />
+                Can see customer phone numbers/addresses
+              </label>
+            </>
+          )}
+
+          {!showResetPassword ? (
+            <button
+              onClick={() => setShowResetPassword(true)}
+              className="tap-target w-full rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+            >
+              Reset password
+            </button>
+          ) : (
+            <div>
+              <PasswordInput
+                value={newPassword}
+                onChange={setNewPassword}
+                placeholder="New password"
+                minLength={MIN_PASSWORD_LENGTH}
+              />
+              <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS_TEXT}</p>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={
+              submitting ||
+              !name ||
+              !phone ||
+              (showResetPassword && newPassword.length < MIN_PASSWORD_LENGTH)
+            }
+            className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : "Save"}
           </button>
         </div>
       </div>

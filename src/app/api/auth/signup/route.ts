@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hashPassword, signSession, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 
 const SignupSchema = z.object({
   storeName: z.string().min(2).max(200),
   storeAddress: z.string().max(500).optional(),
   ownerName: z.string().min(1).max(200),
   ownerPhone: z.string().min(6).max(20),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`),
 });
 
 // POST /api/auth/signup - the "plug and play" entry point: creates a brand
