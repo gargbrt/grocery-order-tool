@@ -6,6 +6,10 @@ import { OrderCard } from "@/components/OrderCard";
 import { MiniCalendar } from "@/components/MiniCalendar";
 import { toE164 } from "@/components/PhoneInput";
 import { HomePicker, type ContactSuggestion } from "@/components/HomePicker";
+import { RetryBanner } from "@/components/RetryBanner";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { enqueue } from "@/lib/offlineQueue";
+import { orderAmount } from "@/lib/orderAmount";
 
 type Order = {
   id: string;
@@ -14,7 +18,8 @@ type Order = {
   createdAt: string;
   prepaid: boolean;
   contact: { homeLabel: string } | null;
-  items: { id: string }[];
+  items: { id: string; lineTotal: number | null; availability: string }[];
+  bill: { paymentStatus: string; total: number } | null;
 };
 
 type Category = "all" | "open" | "review" | "delivered" | "cancelled";
@@ -38,22 +43,35 @@ export default function OrdersPage() {
     initialCategory && VALID_CATEGORIES.includes(initialCategory) ? initialCategory : "all"
   );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   async function load(silent = false) {
-    if (!silent) setLoading(true);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     const params = new URLSearchParams({ category: tab });
     if (selectedDate) params.set("date", selectedDate);
-    const [ordersRes, reviewRes] = await Promise.all([
-      fetch(`/api/orders?${params.toString()}`),
-      fetch("/api/orders?category=review"),
+    const [ordersResult, reviewResult] = await Promise.all([
+      safeFetchJson<{ orders: Order[] }>(`/api/orders?${params.toString()}`),
+      safeFetchJson<{ orders: Order[] }>("/api/orders?category=review"),
     ]);
-    const ordersBody = await ordersRes.json();
-    const reviewBody = await reviewRes.json();
-    setOrders(ordersBody.orders ?? []);
-    setReviewCount((reviewBody.orders ?? []).length);
+
+    if (!ordersResult.ok) {
+      // A background poll failing shouldn't wipe out orders already on
+      // screen - only surface the retry state for an explicit (non-silent) load.
+      if (!silent) {
+        setError(ordersResult.error);
+        setLoading(false);
+      }
+      return;
+    }
+
+    setOrders(ordersResult.data.orders ?? []);
+    if (reviewResult.ok) setReviewCount((reviewResult.data.orders ?? []).length);
     if (!silent) setLoading(false);
   }
 
@@ -69,63 +87,66 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowRecordPayment(true)}
-            className="tap-target rounded-full border border-brand-600 px-3 py-2 text-sm font-medium text-brand-700"
-          >
-            Record payment
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="tap-target rounded-full bg-brand-600 px-3 py-2 text-sm font-medium text-white"
-          >
-            + WhatsApp order
-          </button>
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 transform-gpu bg-[#f4f7fb] px-4 pb-3 pt-4">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowRecordPayment(true)}
+              className="tap-target rounded-full border border-brand-600 px-3 py-2 text-sm font-medium text-brand-700"
+            >
+              Record payment
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="tap-target rounded-full bg-brand-600 px-3 py-2 text-sm font-medium text-white"
+            >
+              + WhatsApp order
+            </button>
+          </div>
         </div>
-      </div>
 
-      <MiniCalendar selectedDate={selectedDate} onSelect={setSelectedDate} />
+        <MiniCalendar selectedDate={selectedDate} onSelect={setSelectedDate} />
 
-      {selectedDate && (
-        <div className="mb-3 flex items-center justify-between rounded-xl2 border border-brand-200 bg-brand-50 px-3 py-2">
-          <p className="text-xs font-medium text-brand-700">
-            Showing orders for{" "}
-            {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })}
-          </p>
-          <button onClick={() => setSelectedDate(null)} className="text-xs font-medium text-brand-700 underline">
-            Clear
-          </button>
+        {selectedDate && (
+          <div className="mb-3 flex items-center justify-between rounded-xl2 border border-brand-200 bg-brand-50 px-3 py-2">
+            <p className="text-xs font-medium text-brand-700">
+              Showing orders for{" "}
+              {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </p>
+            <button onClick={() => setSelectedDate(null)} className="text-xs font-medium text-brand-700 underline">
+              Clear
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-1 overflow-x-auto rounded-full bg-gray-100 p-1">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setTab(c.key)}
+              className={`tap-target shrink-0 rounded-full px-3 text-sm font-medium ${
+                tab === c.key
+                  ? c.key === "review"
+                    ? "bg-white text-amber-700 shadow-sm"
+                    : "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500"
+              }`}
+            >
+              {c.label}
+              {c.key === "review" && reviewCount > 0 ? ` (${reviewCount})` : ""}
+            </button>
+          ))}
         </div>
-      )}
-
-      <div className="mb-3 flex gap-1 overflow-x-auto rounded-full bg-gray-100 p-1">
-        {CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setTab(c.key)}
-            className={`tap-target shrink-0 rounded-full px-3 text-sm font-medium ${
-              tab === c.key
-                ? c.key === "review"
-                  ? "bg-white text-amber-700 shadow-sm"
-                  : "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500"
-            }`}
-          >
-            {c.label}
-            {c.key === "review" && reviewCount > 0 ? ` (${reviewCount})` : ""}
-          </button>
-        ))}
       </div>
 
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
-      {!loading && orders.length === 0 && (
+      {!loading && error && <RetryBanner message={error} onRetry={() => load()} />}
+      {!loading && !error && orders.length === 0 && (
         <p className="rounded-xl2 border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
           {tab === "all"
             ? 'No orders yet. Orders sent to your Telegram bot appear here automatically. For WhatsApp (manual mode), tap "+ WhatsApp order" to paste one in.'
@@ -144,6 +165,9 @@ export default function OrdersPage() {
             itemCount={o.items.length}
             createdAt={o.createdAt}
             prepaid={o.prepaid}
+            paymentStatus={o.bill?.paymentStatus}
+            amount={orderAmount(o)}
+            billed={!!o.bill}
           />
         ))}
       </div>
@@ -161,22 +185,34 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
   const [prepaid, setPrepaid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
 
   async function submit() {
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ homeLabel, contactPhone: toE164(contactPhone), rawMessage, prepaid }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError("Could not save order — check the fields and try again.");
-      return;
+    const body = { homeLabel, contactPhone: toE164(contactPhone), rawMessage, prepaid };
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        setError("Could not save order — check the fields and try again.");
+        return;
+      }
+      onCreated();
+      onClose();
+    } catch {
+      setSubmitting(false);
+      enqueue({ url: "/api/orders", body, label: `order for ${homeLabel}` });
+      setQueuedMessage("You're offline — this order has been saved and will be sent automatically once you're back online.");
+      setTimeout(() => {
+        onCreated();
+        onClose();
+      }, 1800);
     }
-    onCreated();
-    onClose();
   }
 
   return (
@@ -202,17 +238,19 @@ function AddWhatsappOrderModal({ onClose, onCreated }: { onClose: () => void; on
             Already paid for
           </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {queuedMessage && <p className="text-sm text-amber-600">📥 {queuedMessage}</p>}
         </div>
         <div className="mt-4 flex gap-2">
           <button
             onClick={onClose}
-            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+            disabled={!!queuedMessage}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={submit}
-            disabled={submitting || !homeLabel || !contactPhone || !rawMessage}
+            disabled={submitting || !!queuedMessage || !homeLabel || !contactPhone || !rawMessage}
             className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? "Saving…" : "Create order"}
@@ -232,22 +270,31 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
 
   async function submit() {
     if (!contact) return;
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/ledger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactId: contact.id, amount: Number(amount), type, note: note || undefined }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError("Couldn't save - check the amount and try again.");
-      return;
+    const body = { contactId: contact.id, amount: Number(amount), type, note: note || undefined };
+    try {
+      const res = await fetch("/api/ledger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        setError("Couldn't save - check the amount and try again.");
+        return;
+      }
+      onClose();
+    } catch {
+      setSubmitting(false);
+      enqueue({ url: "/api/ledger", body, label: `${type === "PAYMENT" ? "payment" : "amount due"} for ${homeLabel}` });
+      setQueuedMessage("You're offline — this has been saved and will be sent automatically once you're back online.");
+      setTimeout(onClose, 1800);
     }
-    onClose();
   }
 
   return (
@@ -302,17 +349,19 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
             className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {queuedMessage && <p className="text-sm text-amber-600">📥 {queuedMessage}</p>}
         </div>
         <div className="mt-4 flex gap-2">
           <button
             onClick={onClose}
-            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+            disabled={!!queuedMessage}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={submit}
-            disabled={submitting || !contact || !amount || Number(amount) <= 0}
+            disabled={submitting || !!queuedMessage || !contact || !amount || Number(amount) <= 0}
             className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? "Saving…" : "Save"}

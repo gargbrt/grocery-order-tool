@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ErrorLogger } from "@/components/ErrorLogger";
 
 export const metadata: Metadata = {
   title: "Store Orders",
@@ -16,7 +17,10 @@ export const viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-surface">{children}</body>
+      <body className="min-h-screen bg-surface">
+        <ErrorLogger />
+        {children}
+      </body>
     </html>
   );
 }

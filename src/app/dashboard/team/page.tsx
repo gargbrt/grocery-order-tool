@@ -5,6 +5,8 @@ import { extractErrorMessage } from "@/lib/errors";
 import { PhoneInput, toE164, fromE164 } from "@/components/PhoneInput";
 import { PasswordInput } from "@/components/PasswordInput";
 import { MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS_TEXT } from "@/lib/passwordPolicy";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { RetryBanner } from "@/components/RetryBanner";
 
 type TeamMember = {
   id: string;
@@ -20,12 +22,18 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [editing, setEditing] = useState<TeamMember | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/team");
-    const body = await res.json();
-    setTeam(body.users ?? []);
+    setError(null);
+    const result = await safeFetchJson<{ users: TeamMember[] }>("/api/team");
+    if (!result.ok) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+    setTeam(result.data.users ?? []);
     setLoading(false);
   }
 
@@ -35,7 +43,7 @@ export default function TeamPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 flex transform-gpu items-center justify-between bg-[#f4f7fb] px-4 pb-3 pt-4">
         <h2 className="text-lg font-semibold text-gray-900">Team</h2>
         <button
           onClick={() => setShowInvite(true)}
@@ -46,8 +54,9 @@ export default function TeamPage() {
       </div>
 
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {!loading && error && <RetryBanner message={error} onRetry={load} />}
 
-      <div className="space-y-2">
+      <div className="mt-3 space-y-2">
         {team.map((member) => (
           <button
             key={member.id}
@@ -185,6 +194,7 @@ function EditTeamMemberModal({
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
@@ -205,6 +215,22 @@ function EditTeamMemberModal({
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setError(extractErrorMessage(body, "Couldn't save changes."));
+      return;
+    }
+    onSaved();
+  }
+
+  async function deleteHelper() {
+    if (!window.confirm(`Remove ${member.name}'s login? They won't be able to sign in anymore. Their past orders/activity stay on record.`)) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    const res = await fetch(`/api/team/${member.id}`, { method: "DELETE" });
+    setDeleting(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(extractErrorMessage(body, "Couldn't remove this helper."));
       return;
     }
     onSaved();
@@ -262,6 +288,20 @@ function EditTeamMemberModal({
               />
               <p className="mt-1 text-xs text-gray-400">{PASSWORD_REQUIREMENTS_TEXT}</p>
             </div>
+          )}
+          <p className="text-xs text-gray-400">
+            Passwords are stored securely and can't be viewed, even by you - use "Reset password" above to set a new
+            one if {member.role === "OWNER" ? "you forget yours" : "they forget theirs"}.
+          </p>
+
+          {member.role === "HELPER" && (
+            <button
+              onClick={deleteHelper}
+              disabled={deleting}
+              className="tap-target w-full rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+            >
+              {deleting ? "Removing…" : "Remove helper login"}
+            </button>
           )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}

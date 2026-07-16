@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { extractErrorMessage } from "@/lib/errors";
 import { PhoneInput, toE164, fromE164 } from "@/components/PhoneInput";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { RetryBanner } from "@/components/RetryBanner";
 
 type Contact = {
   id: string;
@@ -18,12 +20,18 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/contacts");
-    const body = await res.json();
-    setContacts(body.contacts ?? []);
+    setError(null);
+    const result = await safeFetchJson<{ contacts: Contact[] }>("/api/contacts");
+    if (!result.ok) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+    setContacts(result.data.contacts ?? []);
     setLoading(false);
   }
 
@@ -37,9 +45,12 @@ export default function ContactsPage() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">Homes</h2>
+      <h2 className="sticky top-0 z-10 -mx-4 -mt-4 transform-gpu bg-[#f4f7fb] px-4 pb-3 pt-4 text-lg font-semibold text-gray-900">
+        Homes
+      </h2>
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
-      <div className="space-y-2">
+      {!loading && error && <RetryBanner message={error} onRetry={load} />}
+      <div className="mt-3 space-y-2">
         {contacts.map((c) => {
           const CardTag = isOwner ? "button" : "div";
           return (

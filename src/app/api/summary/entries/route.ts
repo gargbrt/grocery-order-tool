@@ -1,35 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isMoneyReceivedEntry } from "@/lib/summaryQueries";
+import { parsePeriod, getRange } from "@/lib/summaryRange";
 
-type Period = "daily" | "weekly" | "monthly";
-
-function getRange(period: Period): { start: Date; end: Date } {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  if (period === "daily") {
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    return { start, end };
-  }
-
-  if (period === "weekly") {
-    const day = start.getDay();
-    const diffToMonday = (day + 6) % 7;
-    start.setDate(start.getDate() - diffToMonday);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-    return { start, end };
-  }
-
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return { start: monthStart, end: monthEnd };
-}
-
-// GET /api/summary/entries?type=money-received|receivables-added&period=daily|weekly|monthly
+// GET /api/summary/entries?type=money-received|receivables-added&period=...
 // Drill-down list backing the Summary tiles: which customer, how much, when.
+// Pulls from LedgerEntry (not Bill) so manual payments/amounts-due recorded
+// straight against a Home show up here too, same as the Summary totals.
 export async function GET(req: NextRequest) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,27 +16,43 @@ export async function GET(req: NextRequest) {
   }
 
   const type = req.nextUrl.searchParams.get("type");
-  const periodParam = req.nextUrl.searchParams.get("period");
-  const period: Period = periodParam === "weekly" || periodParam === "monthly" ? periodParam : "daily";
   if (type !== "money-received" && type !== "receivables-added") {
     return NextResponse.json({ error: "Invalid type" }, { status: 400 });
   }
-
-  const { start, end } = getRange(period);
-  const paymentStatus = type === "money-received" ? "PAID" : "CREDIT";
-
-  const bills = await prisma.bill.findMany({
-    where: { paymentStatus, finalizedAt: { gte: start, lt: end }, order: { storeId: session.storeId } },
-    include: { order: { include: { contact: true } } },
-    orderBy: { finalizedAt: "desc" },
+  const period = parsePeriod(req.nextUrl.searchParams.get("period"));
+  const { start, end } = getRange(period, {
+    start: req.nextUrl.searchParams.get("start"),
+    end: req.nextUrl.searchParams.get("end"),
   });
 
-  const entries = bills.map((b) => ({
-    orderId: b.orderId,
-    homeLabel: b.order.contact?.homeLabel ?? "Unknown home",
-    amount: b.total,
-    timestamp: b.finalizedAt,
-  }));
+  const ledgerEntries = await prisma.ledgerEntry.findMany({
+    where: { createdAt: { gte: start, lt: end }, contact: { storeId: session.storeId } },
+    include: { contact: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const billIds = ledgerEntries.filter((e) => e.billId).map((e) => e.billId as string);
+  const bills = billIds.length
+    ? await prisma.bill.findMany({ where: { id: { in: billIds } }, select: { id: true, paymentStatus: true } })
+    : [];
+  const billStatusById = new Map(bills.map((b) => [b.id, b.paymentStatus]));
+
+  const entries = ledgerEntries
+    .filter((e) => {
+      const isReceived = isMoneyReceivedEntry({
+        amount: e.amount,
+        billId: e.billId,
+        billPaymentStatus: e.billId ? billStatusById.get(e.billId) ?? null : null,
+      });
+      return type === "money-received" ? isReceived : !isReceived;
+    })
+    .map((e) => ({
+      contactId: e.contactId,
+      homeLabel: e.contact.homeLabel,
+      amount: Math.abs(e.amount),
+      note: e.note,
+      timestamp: e.createdAt,
+    }));
 
   return NextResponse.json({ entries });
 }

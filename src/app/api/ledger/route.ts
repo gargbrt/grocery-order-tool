@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { totalOrderValue } from "@/lib/customerValue";
 
 // GET /api/ledger?contactId=xxx - full ledger history for one Home.
 // Without contactId, returns current outstanding balance for every Home (owner only).
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
     where: { storeId: session.storeId },
     include: {
       ledgerEntries: { orderBy: { createdAt: "desc" }, take: 1 },
+      orders: { include: { bill: true } },
     },
   });
 
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest) {
     homeLabel: c.homeLabel,
     balance: c.ledgerEntries[0]?.runningBalance ?? 0,
     lastActivityAt: c.ledgerEntries[0]?.createdAt ?? null,
+    totalOrderValue: totalOrderValue(c.orders),
   }));
 
   return NextResponse.json({ balances });

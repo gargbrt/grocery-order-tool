@@ -139,6 +139,31 @@ a desktop.
 - [ ] Sales analytics for the owner (top items, busiest hours, biggest
   credit accounts)
 - [ ] Multi-store support for owners running more than one branch
+- [ ] Helper account invite/accept flow with role changes — instead of the
+  owner unilaterally creating a helper login, send a request to an existing
+  account (by phone) that the person themselves logs in to accept, at which
+  point their role/store mapping updates. Needed alongside this: an audit
+  log of every such mapping/role change (who changed what, when), since it
+  affects who can see pricing/contact details and which store's data an
+  account can reach. Non-trivial - touches auth, permissions, and probably
+  a notification step - so this is explicitly a later-phase item, not a
+  quick add.
+
+**Phase 4 (or later) — taxation & compliance**
+- [ ] Total sales and COGS reporting, derived from finalized bills and
+  catalog/item cost data (cost data doesn't exist yet - would need a "cost
+  price" field per catalog item/order line first)
+- [ ] Generated balance sheet, income statement, and cash flow statement -
+  a real move from "ledger app" to "basic accounting system"; needs a proper
+  chart of accounts underneath, not just the current single running-balance
+  ledger per Home
+- [ ] GST filing assistance and GST report generation (GSTR-1/GSTR-3B style
+  summaries) - depends on capturing HSN/SAC codes and tax rates per item,
+  which the schema doesn't have today
+- Both of the above are substantial, later-phase efforts (schema and data-
+  capture changes throughout order/billing, not just a reporting layer on
+  top of what exists) - noted here as roadmap direction, not scoped for
+  near-term implementation.
 
 **Ideas / open to contributions**
 - [ ] Smarter order-parsing (currently a conservative rule-based heuristic in

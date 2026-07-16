@@ -9,6 +9,9 @@ type OrderCardProps = {
   itemCount: number;
   createdAt: string;
   prepaid?: boolean;
+  paymentStatus?: string | null;
+  amount: number;
+  billed: boolean;
 };
 
 const CHANNEL_ICON: Record<string, string> = {
@@ -17,7 +20,18 @@ const CHANNEL_ICON: Record<string, string> = {
   MANUAL: "✍️",
 };
 
-export function OrderCard({ id, homeLabel, channel, status, itemCount, createdAt, prepaid }: OrderCardProps) {
+export function OrderCard({
+  id,
+  homeLabel,
+  channel,
+  status,
+  itemCount,
+  createdAt,
+  prepaid,
+  paymentStatus,
+  amount,
+  billed,
+}: OrderCardProps) {
   return (
     <Link
       href={`/dashboard/orders/${id}`}
@@ -36,8 +50,15 @@ export function OrderCard({ id, homeLabel, channel, status, itemCount, createdAt
               minute: "2-digit",
             })}
           </p>
+          {amount > 0 || billed ? (
+            <p className="mt-0.5 text-xs font-medium text-gray-700">
+              {billed ? "" : "≈ "}₹{amount.toFixed(2)}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-gray-400">Not priced yet</p>
+          )}
         </div>
-        <StatusChip status={status} />
+        <StatusChip status={status} paymentStatus={paymentStatus} />
       </div>
     </Link>
   );

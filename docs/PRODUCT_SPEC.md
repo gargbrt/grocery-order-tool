@@ -131,7 +131,30 @@ Not yet built. Design:
   this as long as we only store transaction references, not card/UPI
   credentials ourselves).
 
-## 8. Design Language
+## 8. Taxation & Accounting Module (Phase 4+, India-specific)
+
+Not yet built. Design direction, sketched here so the schema/data work isn't
+a surprise when this gets picked up:
+
+- **Sales & COGS reporting** — total sales already exists implicitly (sum of
+  finalized bills); COGS doesn't, since the schema has no cost-price field
+  today. Needs a "cost price" per `CatalogItem`/order line, captured at time
+  of billing (cost can change over time, so it must be snapshotted per sale,
+  not just looked up live from the catalog).
+- **Financial statements** — a real balance sheet, income statement, and cash
+  flow statement need a proper chart of accounts underneath (assets,
+  liabilities, revenue, expense categories), not just the current single
+  running-balance ledger per Home. The existing `LedgerEntry` model tracks
+  receivables only — it isn't a general ledger.
+- **GST filing & reports** — GSTR-1/GSTR-3B-style summaries need HSN/SAC
+  codes and applicable tax rates captured per catalog item (or per order
+  line for freeform items), plus a place to record the store's own GSTIN.
+  None of that exists in the schema yet.
+- This is explicitly a later-phase, schema-first effort — see the Phase 4
+  entry in the [Roadmap](../README.md#roadmap) — not scoped for near-term
+  implementation.
+
+## 9. Design Language
 
 Mobile-first web app, installable as a PWA, following current Material 3
 (Android) / iOS Human Interface Guidelines conventions: large tap targets,
@@ -139,7 +162,7 @@ bottom nav for the core screens (Orders, Homes, Ledger), color-coded status
 chips, minimal typing — mostly tap-to-check-off for the helper's fulfillment
 screen.
 
-## 9. Phasing
+## 10. Phasing
 
 See the [Roadmap section of the main README](../README.md#roadmap) — kept in
 one place so it doesn't drift out of sync between two documents.

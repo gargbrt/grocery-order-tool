@@ -2,36 +2,67 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { RetryBanner } from "@/components/RetryBanner";
 
-type Period = "daily" | "weekly" | "monthly";
+type Period = "daily" | "weekly" | "monthly" | "fy" | "all" | "custom";
+
+type TopCustomer = { contactId: string; homeLabel: string; totalOrderValue: number };
+
+type CumulativeWithChange = { cumulative: number; change: number };
 
 type Summary = {
   period: Period;
   range: { start: string; end: string };
   ordersReceived: number;
+  ordersOpen: number;
   ordersDelivered: number;
-  ordersCancelled: number;
-  moneyReceived: number;
-  receivablesAdded: number;
-  totalOutstanding: number;
+  totalBilled: CumulativeWithChange;
+  moneyReceived: CumulativeWithChange;
+  totalOutstanding: CumulativeWithChange;
+  topCustomers: TopCustomer[];
 };
+
+const PERIODS: Period[] = ["daily", "weekly", "monthly", "fy", "all", "custom"];
 
 const PERIOD_LABELS: Record<Period, string> = {
   daily: "Today",
   weekly: "This week",
   monthly: "This month",
+  fy: "This financial year",
+  all: "Overall",
+  custom: "Custom range",
 };
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function SummaryPage() {
   const [period, setPeriod] = useState<Period>("daily");
+  const [customStart, setCustomStart] = useState(todayIso());
+  const [customEnd, setCustomEnd] = useState(todayIso());
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const periodQuery =
+    period === "custom" ? `period=custom&start=${customStart}&end=${customEnd}` : `period=${period}`;
 
   async function load(silent = false) {
-    if (!silent) setLoading(true);
-    const res = await fetch(`/api/summary?period=${period}`);
-    const body = await res.json();
-    setSummary(body.error ? null : body);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+    const result = await safeFetchJson<Summary>(`/api/summary?${periodQuery}`);
+    if (!result.ok) {
+      if (!silent) {
+        setError(result.error);
+        setLoading(false);
+      }
+      return;
+    }
+    setSummary(result.data);
     if (!silent) setLoading(false);
   }
 
@@ -40,66 +71,106 @@ export default function SummaryPage() {
     const interval = setInterval(() => load(true), 10000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
+  }, [period, customStart, customEnd]);
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">Summary</h2>
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 transform-gpu bg-[#f4f7fb] px-4 pb-3 pt-4">
+        <h2 className="mb-3 text-lg font-semibold text-gray-900">Summary</h2>
 
-      <div className="mb-4 flex gap-2 rounded-full bg-gray-100 p-1">
-        {(["daily", "weekly", "monthly"] as Period[]).map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`tap-target flex-1 rounded-full text-sm font-medium ${
-              period === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
-            }`}
-          >
-            {PERIOD_LABELS[p]}
-          </button>
-        ))}
+        <div className="flex gap-1 overflow-x-auto rounded-full bg-gray-100 p-1">
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`tap-target shrink-0 rounded-full px-3 text-sm font-medium ${
+                period === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              {PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
+        {period === "custom" && (
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="date"
+              value={customStart}
+              max={customEnd}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="tap-target flex-1 rounded-lg border border-gray-300 px-2 py-2 text-sm"
+            />
+            <span className="text-sm text-gray-500">to</span>
+            <input
+              type="date"
+              value={customEnd}
+              min={customStart}
+              max={todayIso()}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="tap-target flex-1 rounded-lg border border-gray-300 px-2 py-2 text-sm"
+            />
+          </div>
+        )}
       </div>
 
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {!loading && error && <RetryBanner message={error} onRetry={() => load()} />}
 
-      {!loading && summary && (
-        <div className="space-y-2">
+      {!loading && !error && summary && (
+        <div className="mt-3 space-y-2">
           <div className="grid grid-cols-3 gap-2">
             <StatTile href="/dashboard" label="Received" value={summary.ordersReceived} />
+            <StatTile href="/dashboard?category=open" label="Open" value={summary.ordersOpen} />
             <StatTile href="/dashboard?category=delivered" label="Delivered" value={summary.ordersDelivered} />
-            <StatTile href="/dashboard?category=cancelled" label="Cancelled" value={summary.ordersCancelled} />
           </div>
 
           <div className="overflow-hidden rounded-xl2 border border-gray-200 bg-white">
-            <Link
-              href={`/dashboard/summary/money-received?period=${period}`}
-              className="tap-target flex items-center justify-between p-3 active:bg-gray-50"
-            >
-              <p className="text-sm text-gray-600">Money received ({PERIOD_LABELS[period].toLowerCase()})</p>
-              <p className="text-sm font-semibold text-brand-600">₹{summary.moneyReceived.toFixed(2)}</p>
-            </Link>
-            <Link
-              href={`/dashboard/summary/receivables-added?period=${period}`}
-              className="tap-target flex items-center justify-between border-t border-gray-100 p-3 active:bg-gray-50"
-            >
-              <p className="text-sm text-gray-600">New receivables added ({PERIOD_LABELS[period].toLowerCase()})</p>
-              <p className="text-sm font-semibold text-amber-600">₹{summary.receivablesAdded.toFixed(2)}</p>
-            </Link>
-            <Link
+            <MoneyRow label="Total billed" cumulative={summary.totalBilled} periodLabel={PERIOD_LABELS[period]} />
+            <MoneyRow
+              label="Money received"
+              cumulative={summary.moneyReceived}
+              periodLabel={PERIOD_LABELS[period]}
+              href={`/dashboard/summary/money-received?${periodQuery}`}
+              bordered
+            />
+            <MoneyRow
+              label="Net receivables / Total outstanding"
+              cumulative={summary.totalOutstanding}
+              periodLabel={PERIOD_LABELS[period]}
               href="/dashboard/ledger"
-              className="tap-target flex items-center justify-between border-t border-gray-100 p-3 active:bg-gray-50"
-            >
-              <p className="text-sm font-medium text-gray-700">Total outstanding right now</p>
-              <p className="text-base font-semibold text-gray-900">₹{summary.totalOutstanding.toFixed(2)}</p>
-            </Link>
+              bordered
+            />
+          </div>
+          <p className="px-1 text-xs text-gray-400">
+            Each row's big number is the cumulative total as of right now; the smaller line below is how much it
+            moved in the selected period. "Total outstanding" won't simply equal "total billed" minus "money
+            received" for a period - money received includes cash paid immediately at delivery, which was never
+            added to anyone's balance in the first place.
+          </p>
+
+          <h3 className="mb-2 mt-4 text-sm font-semibold text-gray-700">Top customers (all-time order value)</h3>
+          <div className="overflow-hidden rounded-xl2 border border-gray-200 bg-white">
+            {summary.topCustomers.map((c, i) => (
+              <Link
+                key={c.contactId}
+                href={`/dashboard/ledger/${c.contactId}`}
+                className={`tap-target flex items-center justify-between p-3 active:bg-gray-50 ${
+                  i > 0 ? "border-t border-gray-100" : ""
+                }`}
+              >
+                <p className="text-sm text-gray-900">
+                  <span className="mr-2 text-xs text-gray-400">#{i + 1}</span>
+                  {c.homeLabel}
+                </p>
+                <p className="text-sm font-semibold text-gray-900">₹{c.totalOrderValue.toFixed(2)}</p>
+              </Link>
+            ))}
+            {summary.topCustomers.length === 0 && (
+              <p className="p-3 text-center text-sm text-gray-500">No billed orders yet.</p>
+            )}
           </div>
         </div>
-      )}
-
-      {!loading && !summary && (
-        <p className="rounded-xl2 border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-          Couldn't load the summary.
-        </p>
       )}
     </div>
   );
@@ -111,5 +182,41 @@ function StatTile({ href, label, value }: { href: string; label: string; value: 
       <p className="text-xl font-semibold text-gray-900">{value}</p>
       <p className="text-xs text-gray-500">{label}</p>
     </Link>
+  );
+}
+
+function MoneyRow({
+  label,
+  cumulative,
+  periodLabel,
+  href,
+  bordered,
+}: {
+  label: string;
+  cumulative: CumulativeWithChange;
+  periodLabel: string;
+  href?: string;
+  bordered?: boolean;
+}) {
+  const changeSign = cumulative.change > 0 ? "+" : cumulative.change < 0 ? "-" : "";
+  const changeText = `${changeSign}₹${Math.abs(cumulative.change).toFixed(2)} ${periodLabel.toLowerCase()}`;
+  const rowClass = `flex items-center justify-between p-3 ${bordered ? "border-t border-gray-100" : ""} ${
+    href ? "tap-target active:bg-gray-50" : ""
+  }`;
+  const content = (
+    <>
+      <p className="text-sm text-gray-600">{label}</p>
+      <div className="text-right">
+        <p className="text-sm font-semibold text-gray-900">₹{cumulative.cumulative.toFixed(2)}</p>
+        <p className="text-xs text-gray-400">{changeText}</p>
+      </div>
+    </>
+  );
+  return href ? (
+    <Link href={href} className={rowClass}>
+      {content}
+    </Link>
+  ) : (
+    <div className={rowClass}>{content}</div>
   );
 }

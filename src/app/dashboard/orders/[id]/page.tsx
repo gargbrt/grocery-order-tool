@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StatusChip } from "@/components/StatusChip";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { RetryBanner } from "@/components/RetryBanner";
 
 type Item = {
   id: string;
@@ -50,6 +52,7 @@ export default function OrderDetailPage() {
   const [overrides, setOverrides] = useState<PriceOverride[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
@@ -60,17 +63,25 @@ export default function OrderDetailPage() {
       .catch(() => setIsOwner(false));
   }, []);
 
-  async function load() {
-    const res = await fetch(`/api/orders/${id}`);
-    const body = await res.json();
-    const loadedOrder: Order | null = body.order ?? null;
+  async function load(silent = false) {
+    if (!silent) setError(null);
+    const result = await safeFetchJson<{ order: Order | null }>(`/api/orders/${id}`);
+    if (!result.ok) {
+      if (!silent) {
+        setError(result.error);
+        setLoading(false);
+      }
+      return;
+    }
+    const loadedOrder = result.data.order ?? null;
     setOrder(loadedOrder);
-    setLoading(false);
+    if (!silent) setLoading(false);
 
     if (loadedOrder?.contact?.id) {
-      const overridesRes = await fetch(`/api/price-overrides?contactId=${loadedOrder.contact.id}`);
-      const overridesBody = await overridesRes.json().catch(() => ({ overrides: [] }));
-      setOverrides(overridesBody.overrides ?? []);
+      const overridesResult = await safeFetchJson<{ overrides: PriceOverride[] }>(
+        `/api/price-overrides?contactId=${loadedOrder.contact.id}`
+      );
+      setOverrides(overridesResult.ok ? overridesResult.data.overrides ?? [] : []);
     }
   }
 
@@ -97,6 +108,7 @@ export default function OrderDetailPage() {
   }, [overrides]);
 
   if (loading) return <p className="text-sm text-gray-500">Loading…</p>;
+  if (error) return <RetryBanner message={error} onRetry={() => load()} />;
   if (!order) return <p className="text-sm text-gray-500">Order not found.</p>;
 
   async function updateItem(itemId: string, patch: Partial<Item>) {
@@ -199,19 +211,23 @@ export default function OrderDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.back()} className="mb-3 text-sm text-brand-700">
-        ← Back
-      </button>
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 transform-gpu bg-[#f4f7fb] px-4 pb-3 pt-4">
+        <button onClick={() => router.back()} className="mb-3 text-sm text-brand-700">
+          ← Back
+        </button>
 
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">{order.contact?.homeLabel ?? "Unknown home"}</h2>
-          <p className="text-xs text-gray-500">{order.contact?.phone}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <StatusChip status={order.status} />
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{order.contact?.homeLabel ?? "Unknown home"}</h2>
+            <p className="text-xs text-gray-500">{order.contact?.phone}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusChip status={order.status} paymentStatus={order.bill?.paymentStatus} />
+          </div>
         </div>
       </div>
+
+      <div className="mt-4">
 
       {order.prepaid && !order.bill && (
         <div className="mb-4 rounded-xl2 border border-brand-200 bg-brand-50 p-3">
@@ -361,7 +377,7 @@ export default function OrderDetailPage() {
         )}
       </div>
 
-      <div className="sticky bottom-20 mt-4 flex gap-2">
+      <div className="mb-4 mt-4 flex gap-2">
         {NEXT_STATUS[order.status] && (
           <button
             onClick={advanceStatus}
@@ -389,6 +405,7 @@ export default function OrderDetailPage() {
       </div>
       </>
       )}
+      </div>
     </div>
   );
 }

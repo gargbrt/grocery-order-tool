@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StatusChip } from "@/components/StatusChip";
+import { safeFetchJson } from "@/lib/safeFetch";
+import { RetryBanner } from "@/components/RetryBanner";
+import { enqueue } from "@/lib/offlineQueue";
 
 type Contact = { id: string; homeLabel: string; phone: string };
 type LedgerEntry = {
@@ -27,17 +30,28 @@ export default function LedgerDetailPage() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showRecordEntry, setShowRecordEntry] = useState(false);
 
   async function load(silent = false) {
-    const [contactBody, ledgerBody, ordersBody] = await Promise.all([
-      fetch(`/api/contacts/${contactId}`).then((r) => r.json()),
-      fetch(`/api/ledger?contactId=${contactId}`).then((r) => r.json()),
-      fetch(`/api/orders?category=all&contactId=${contactId}`).then((r) => r.json()),
+    if (!silent) setError(null);
+    const [contactResult, ledgerResult, ordersResult] = await Promise.all([
+      safeFetchJson<{ contact: Contact }>(`/api/contacts/${contactId}`),
+      safeFetchJson<{ entries: LedgerEntry[] }>(`/api/ledger?contactId=${contactId}`),
+      safeFetchJson<{ orders: OrderSummary[] }>(`/api/orders?category=all&contactId=${contactId}`),
     ]);
-    setContact(contactBody.contact ?? null);
-    setEntries(ledgerBody.entries ?? []);
-    setOrders(ordersBody.orders ?? []);
+
+    if (!contactResult.ok || !ledgerResult.ok || !ordersResult.ok) {
+      if (!silent) {
+        setError(!contactResult.ok ? contactResult.error : !ledgerResult.ok ? ledgerResult.error : (ordersResult as { ok: false; error: string }).error);
+        setLoading(false);
+      }
+      return;
+    }
+
+    setContact(contactResult.data.contact ?? null);
+    setEntries(ledgerResult.data.entries ?? []);
+    setOrders(ordersResult.data.orders ?? []);
     if (!silent) setLoading(false);
   }
 
@@ -52,31 +66,38 @@ export default function LedgerDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.back()} className="mb-3 text-sm text-brand-700">
-        ← Back
-      </button>
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 transform-gpu bg-[#f4f7fb] px-4 pb-3 pt-4">
+        <button onClick={() => router.back()} className="mb-3 text-sm text-brand-700">
+          ← Back
+        </button>
+
+        {!loading && !error && contact && (
+          <>
+            <h2 className="text-lg font-semibold text-gray-900">{contact.homeLabel}</h2>
+            <p className="mb-3 text-xs text-gray-500">{contact.phone}</p>
+
+            <div className="mb-3 rounded-xl2 border border-gray-200 bg-white p-3">
+              <p className="text-sm text-gray-600">Current balance</p>
+              <p className={`text-xl font-semibold ${currentBalance > 0 ? "text-amber-600" : "text-brand-600"}`}>
+                ₹{currentBalance.toFixed(2)}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowRecordEntry(true)}
+              className="tap-target w-full rounded-lg border border-brand-600 py-2 text-sm font-medium text-brand-700"
+            >
+              Record payment / add amount due
+            </button>
+          </>
+        )}
+      </div>
 
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {!loading && error && <RetryBanner message={error} onRetry={() => load()} />}
 
-      {!loading && contact && (
-        <>
-          <h2 className="text-lg font-semibold text-gray-900">{contact.homeLabel}</h2>
-          <p className="mb-4 text-xs text-gray-500">{contact.phone}</p>
-
-          <div className="mb-4 rounded-xl2 border border-gray-200 bg-white p-3">
-            <p className="text-sm text-gray-600">Current balance</p>
-            <p className={`text-xl font-semibold ${currentBalance > 0 ? "text-amber-600" : "text-brand-600"}`}>
-              ₹{currentBalance.toFixed(2)}
-            </p>
-          </div>
-
-          <button
-            onClick={() => setShowRecordEntry(true)}
-            className="tap-target mb-4 w-full rounded-lg border border-brand-600 py-2 text-sm font-medium text-brand-700"
-          >
-            Record payment / add amount due
-          </button>
-
+      {!loading && !error && contact && (
+        <div className="mt-3">
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Orders</h3>
           <div className="mb-4 space-y-2">
             {orders.map((o) => (
@@ -92,7 +113,7 @@ export default function LedgerDetailPage() {
                   </p>
                   {o.bill && <p className="text-xs text-gray-500">₹{o.bill.total.toFixed(2)} · {o.bill.paymentStatus}</p>}
                 </div>
-                <StatusChip status={o.status} />
+                <StatusChip status={o.status} paymentStatus={o.bill?.paymentStatus} />
               </a>
             ))}
             {orders.length === 0 && <p className="text-sm text-gray-500">No orders yet.</p>}
@@ -121,10 +142,10 @@ export default function LedgerDetailPage() {
             ))}
             {entries.length === 0 && <p className="text-sm text-gray-500">No payment/credit entries yet.</p>}
           </div>
-        </>
+        </div>
       )}
 
-      {!loading && !contact && <p className="text-sm text-gray-500">Home not found.</p>}
+      {!loading && !error && !contact && <p className="text-sm text-gray-500">Home not found.</p>}
 
       {showRecordEntry && (
         <RecordEntryModal
@@ -154,21 +175,30 @@ function RecordEntryModal({
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
 
   async function submit() {
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/ledger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactId, amount: Number(amount), type, note: note || undefined }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError("Couldn't save - check the amount and try again.");
-      return;
+    const body = { contactId, amount: Number(amount), type, note: note || undefined };
+    try {
+      const res = await fetch("/api/ledger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        setError("Couldn't save - check the amount and try again.");
+        return;
+      }
+      onSaved();
+    } catch {
+      setSubmitting(false);
+      enqueue({ url: "/api/ledger", body, label: `${type === "PAYMENT" ? "payment" : "amount due"} entry` });
+      setQueuedMessage("You're offline — this has been saved and will be sent automatically once you're back online.");
+      setTimeout(onSaved, 1800);
     }
-    onSaved();
   }
 
   return (
@@ -210,17 +240,19 @@ function RecordEntryModal({
             className="tap-target w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {queuedMessage && <p className="text-sm text-amber-600">📥 {queuedMessage}</p>}
         </div>
         <div className="mt-4 flex gap-2">
           <button
             onClick={onClose}
-            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+            disabled={!!queuedMessage}
+            className="tap-target flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={submit}
-            disabled={submitting || !amount || Number(amount) <= 0}
+            disabled={submitting || !!queuedMessage || !amount || Number(amount) <= 0}
             className="tap-target flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? "Saving…" : "Save"}

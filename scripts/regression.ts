@@ -22,6 +22,10 @@ const TEST_SCRIPTS = [
   "test-order-categories.ts",
   "test-ledger-overdue.ts",
   "test-item-parsing.ts",
+  "test-summary-queries.ts",
+  "test-customer-value.ts",
+  "test-summary-range.ts",
+  "test-order-amount.ts",
 ];
 
 let failedScripts: string[] = [];
